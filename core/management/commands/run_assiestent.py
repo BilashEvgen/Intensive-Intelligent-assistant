@@ -7,6 +7,8 @@ import os
 
 from core.utils.finder import find_app_path
 from core.management.commands.add_command import add_new_app_command_voice
+from core.utils.default_commands import load_default_commands
+from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity
 
 class Command(BaseCommand):
     # handle - метод який відповідає за точку входу в програму 
@@ -16,6 +18,9 @@ class Command(BaseCommand):
         # self.stdout.write - правильний спосіб виведення тексту в джанго командах
         # self.style.SUCCESS - додає зелений колір до тексту
         self.stdout.write(self.style.SUCCESS("Асистен запущений ..."))
+
+        # завантажуємо дефолтні команди (відкрити/закрити/додати команду) з JSON файлу
+        self.default_commands = load_default_commands()
         
         # sr.Recognizer створює об'єкт розпізнавання голосу
         recognizer = sr.Recognizer()
@@ -56,42 +61,40 @@ class Command(BaseCommand):
                 
     def process_command(self, command_text: str, source, recognizer):
         command_text = command_text.lower().strip()
-        # Якщо в команді нема слова відкрий 
 
-        if "додати команду" in command_text:
+        is_add_command = find_best_keyword_match(
+            self.default_commands["add_command"], command_text
+        )
+        is_close = find_best_keyword_match(
+            self.default_commands["close"], command_text
+        )
+        is_open = find_best_keyword_match(
+            self.default_commands["open"], command_text
+        )
+
+        if is_add_command:
             add_new_app_command_voice(source, recognizer)
-            return 
+            return
 
-        if  "закрий" in command_text:
-            found_app = None
-            for app in App_command.objects.all():
-                for element in self.text_variants:
-                    if app.key_word and app.key_word.lower() in element['transcript'].lower():
-                        found_app = app
-                        break
+        if is_close:
+            found_app = self.find_app_by_keyword()
             if not found_app:
                 speak_async("Я не знайшла такої команди")
                 return
             speak_async(f"Закриваю {found_app.app_name}")
             self.close_app(found_app)
             return
-        
-        if "відкрий" not in command_text:
+
+        if not is_open:
             # Перебираємо всі об'єкти моделі
             # objects.all - отримання всіх об'єктів з моделі
             for resp in Voice_response.objects.all():
-                if resp.key_word and resp.key_word.lower() in command_text:
+                if resp.key_word and fuzzy_word_in_text(resp.key_word, command_text):
                     speak_async(resp.response)
                     return
             return
-        
-        found_app = None
-        
-        for app in App_command.objects.all():
-            for element in self.text_variants:
-                if app.key_word and app.key_word.lower() in element['transcript'].lower():
-                    found_app = app
-                    break
+
+        found_app = self.find_app_by_keyword()
 
         if not found_app:
             speak_async("Я не знайшла такої команди")
@@ -113,6 +116,31 @@ class Command(BaseCommand):
             self.launch_app(found_path)
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
+
+    def find_app_by_keyword(self):
+        best_app = None
+        best_score = 0
+
+        for app in App_command.objects.all():
+            if not app.key_word:
+                continue
+
+            for element in self.text_variants:
+                transcript = element['transcript'].lower()
+
+                if fuzzy_word_in_text(app.key_word, transcript):
+                    # Чем точнее совпадает ключевое слово,
+                    # тем выше приоритет
+                    if app.key_word.lower() in transcript:
+                        score = 1.0
+                    else:
+                        score = similarity(app.key_word.lower(), transcript)
+
+                    if score > best_score:
+                        best_score = score
+                        best_app = app
+
+        return best_app
             
     def launch_app(self, path):
         try:
