@@ -1,0 +1,224 @@
+from django.core.management.base import BaseCommand
+import speech_recognition as sr
+from core.models import Voice_response, App_command
+from core.utils.voice_engine import speak_async
+import platform
+import os
+
+from core.utils.finder import find_app_path
+from core.management.commands.add_command import add_new_app_command_voice
+from core.management.commands.delete_command import delete_app_command_voice
+from core.utils.default_commands import load_default_commands
+from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
+from core.utils.app_confirm import confirm_app_name_by_dictionary
+from core.utils.answer_classify import matches_action
+
+class Command(BaseCommand):
+    # handle - метод який відповідає за точку входу в програму 
+    # *args - позіціонні елементи(передаються по порядку)
+    # **options - іменовані параметри(флаги, налаштування та інше)
+    def handle(self, *args, **options):
+        # self.stdout.write - правильний спосіб виведення тексту в джанго командах
+        # self.style.SUCCESS - додає зелений колір до тексту
+        self.stdout.write(self.style.SUCCESS("Асистен запущений ..."))
+
+        # завантажуємо дефолтні команди (відкрити/закрити/додати команду) з JSON файлу
+        self.default_commands = load_default_commands()
+        
+        # sr.Recognizer створює об'єкт розпізнавання голосу
+        recognizer = sr.Recognizer()
+        # sr.Microphone підключає мікрофон як джерело звуку
+        mic = sr.Microphone()
+        
+        # with гарантує правильне відкриття та закриття мікрофону
+        # source об'єкт з якого буде слухатись звук
+        with mic as source:
+            # У вимкненому режимі мікрофон не виконує автоматичну калібровку
+            # фонового шуму і не піднімає поріг чутливості під “шумодав”,
+            # тому звук фіксується більш “сирим” і без агресивного фільтра.
+            self.stdout.write("Калібровка шуму вимкнена")
+
+            # Вимикаємо автоматичне підлаштування порогу чутливості.
+            # Це прибирає “шумодав” на рівні SpeechRecognition.
+            recognizer.dynamic_energy_threshold = False
+
+            # Якщо потрібно, можна знизити поріг вручну, щоб ловити тихі слова.
+            # Значення 200 — нижній поріг для більш чутливого захоплення.
+            recognizer.energy_threshold = 200
+
+            self.stdout.write(f"Поріг чутливості мікрофона: {recognizer.energy_threshold:.0f}")
+
+            self.stdout.write(self.style.SUCCESS("Слухаю ..."))
+            
+            while True:
+                try:
+                    # recognizer.listen - метод який слухає користувача
+                    # timeout = None чекає команду від користувача безліч часу
+                    # phrase_time_limit - максимум часу на одну фразу
+                    audio = recognizer.listen(source, timeout = None, phrase_time_limit = 5)
+
+                    # recognize_google - метод який відправляє аудіо в гугл апі та отримує текст
+                    # language - мова для розпізнання
+                    command_text = recognizer.recognize_google(audio, language = "uk-UA")
+                    self.text_variants = recognizer.recognize_google(audio, language = "uk-UA", show_all = True)['alternative']
+                    self.stdout.write(f"Ви сказали: {command_text}")
+                    self.process_command(command_text, source, recognizer)
+                    
+                except sr.UnknownValueError:
+                    continue
+                
+                except Exception as err:
+                    self.stdout.write(self.style.WARNING(f"Помилка: {err}"))
+                    continue
+                
+    def process_command(self, command_text: str, source, recognizer):
+        command_text = command_text.lower().strip()
+
+        # для "додати команду"/"видалити команду" звичайного нечіткого пошуку
+        # по всій фразі недостатньо - вони мають спільне слово "команду" і
+        # плутаються одна з одною (схожість фраз ~0.8) при звичайному порозі,
+        # тому порівнюємо лише дієслово-дію
+        is_add_command = matches_action(command_text, self.default_commands["add_command"])
+        is_delete_command = matches_action(command_text, self.default_commands["delete_command"])
+        is_close = find_best_keyword_match(
+            self.default_commands["close"], command_text
+        )
+        is_open = find_best_keyword_match(
+            self.default_commands["open"], command_text
+        )
+
+        if is_add_command:
+            add_new_app_command_voice(source, recognizer)
+            return
+
+        if is_delete_command:
+            delete_app_command_voice(source, recognizer, self.default_commands, self.stdout)
+            return
+
+        if is_close:
+            found_app = self.find_app_by_keyword()
+            if not found_app:
+                speak_async("Я не знайшла такої команди")
+                return
+            speak_async(f"Закриваю {found_app.app_name}")
+            self.close_app(found_app)
+            return
+
+        if not is_open:
+            # Перебираємо всі об'єкти моделі
+            # objects.all - отримання всіх об'єктів з моделі
+            for resp in Voice_response.objects.all():
+                if resp.key_word and fuzzy_word_in_text(resp.key_word, command_text):
+                    speak_async(resp.response)
+                    return
+            return
+
+        found_app = self.find_app_by_keyword()
+
+        if not found_app:
+            candidate = extract_app_name(command_text, self.default_commands["open"])
+
+            if not candidate:
+                speak_async("Я не знайшла такої команди")
+                return
+
+            speak_async(f'Я не знайшла команду "{candidate}" в базі. Підберу схожі слова зі словника')
+
+            confirmed_word = confirm_app_name_by_dictionary(
+                candidate, source, recognizer, self.default_commands, self.stdout
+            )
+
+            if not confirmed_word:
+                speak_async("Додавання скасовано")
+                return
+
+            self.register_and_launch_new_app(confirmed_word)
+            return
+
+        if found_app.path and os.path.exists(found_app.path):
+            speak_async(f"Відкриваю {found_app.app_name}")
+            self.launch_app(found_app.path)
+            return
+        
+        speak_async(f"Шукаю {found_app.app_name}")
+        found_path = find_app_path(found_app.app_name)
+
+        if found_path:
+            found_app.path = found_path
+            #save() - дозволяє зберегти зміни в базі даних 
+            found_app.save()
+            speak_async(f"Відкриваю {found_app.app_name}")
+            self.launch_app(found_path)
+        else:
+            speak_async(f"Я не змогла знайти цю програму на компе")
+
+    def register_and_launch_new_app(self, word: str):
+        # зберігаємо підтверджене слово одразу і як ключове слово, і як назву застосунку
+        app_command = App_command.objects.create(app_name = word, key_word = word)
+
+        speak_async(f"Слово {word} додано. Шукаю програму")
+        found_path = find_app_path(word)
+
+        if found_path:
+            app_command.path = found_path
+            app_command.save()
+            speak_async(f"Відкриваю {word}")
+            self.launch_app(found_path)
+        else:
+            speak_async(f"Команду {word} додано, але я не змогла знайти таку програму на компʼютері")
+
+    def find_app_by_keyword(self):
+        best_app = None
+        best_score = 0
+
+        for app in App_command.objects.all():
+            if not app.key_word:
+                continue
+
+            for element in self.text_variants:
+                transcript = element['transcript'].lower()
+
+                if fuzzy_word_in_text(app.key_word, transcript):
+                    # Чем точнее совпадает ключевое слово,
+                    # тем выше приоритет
+                    if app.key_word.lower() in transcript:
+                        score = 1.0
+                    else:
+                        score = similarity(app.key_word.lower(), transcript)
+
+                    if score > best_score:
+                        best_score = score
+                        best_app = app
+
+        return best_app
+            
+    def launch_app(self, path):
+        try:
+            if platform.system() == "Windows":
+                #Стандартний спосіб відкрити програму або файл на Windows
+                os.startfile(path)
+            else:
+                #Виконує команду в терміналі 
+                # "open -a" - команда для MacOS чи Linux для вікриття програм
+                os.system("open -a" + path)
+        except Exception as err:
+            self.stdout.write(self.style.ERROR(f"Помилка запуску {err}"))
+
+    def close_app(self, app_command):
+        if app_command.path and not app_command.path.lower().endswith(".lnk"):
+            process_name = os.path.basename(app_command.path)
+        else:
+            process_name = app_command.app_name
+        try:
+            if platform.system() == "Windows":
+                if not process_name.lower().endswith(".exe"):
+                    process_name += ".exe"
+                result = os.system(f'taskkill /IM "{process_name}" /F')
+            else:
+                if process_name.lower().endswith(".app"):
+                    process_name = process_name[:-4]
+                result = os.system(f'pkill -f "{process_name}"')
+            if result != 0:
+                self.stdout.write(self.style.WARNING(f"Не вдалося знайти запущенний процес {process_name}"))
+        except Exception as err:
+            self.stdout.write(self.style.ERROR(f"Помилка закриття {err}"))

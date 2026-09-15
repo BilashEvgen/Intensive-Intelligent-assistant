@@ -1,0 +1,7 @@
+Django
+SpeechRecognition
+PyAudio
+edge-tts
+pygame
+asyncio
+requests
