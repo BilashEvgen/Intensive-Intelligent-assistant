@@ -22,7 +22,7 @@ def add_new_app_command_voice(source, recognizer):
     if not keyword:
         speak_task('Я не почула слово, спробуйте ще раз')
         return
-    speak_task(f'Ваше слово: {keyword},підтвердити?')
+    speak_task(f'Ваше слово: {keyword}, підтвердити?')
     
     confirm = get_voice_input(source, recognizer)
 
