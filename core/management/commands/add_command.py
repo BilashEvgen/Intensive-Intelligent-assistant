@@ -1,20 +1,8 @@
-import time
 from core.models import App_command
 from core.utils.voice_engine import speak_async, speak_task
-import speech_recognition as sr
+from core.utils.voice_input import get_voice_input
 
-def get_voice_input(source, recognizer):
-    try:
-        time.sleep(0.3)
-        
-        audio = recognizer.listen(source, timeout = None, phrase_time_limit = 5)
-        
-        text = recognizer.recognize_google(audio, language = "uk-UA").lower()
-        return text
-    
-    except Exception:
-        return None
-    
+
 def add_new_app_command_voice(source, recognizer):
     speak_task('Щоб додати команду, скажіть ключове слово')
     keyword  = get_voice_input(source, recognizer)
@@ -22,7 +10,7 @@ def add_new_app_command_voice(source, recognizer):
     if not keyword:
         speak_task('Я не почула слово, спробуйте ще раз')
         return
-    speak_task(f'Ваше слово: {keyword},підтвердити?')
+    speak_task(f'Ваше слово: {keyword}, підтвердити?')
     
     confirm = get_voice_input(source, recognizer)
 

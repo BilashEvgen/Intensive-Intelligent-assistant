@@ -7,8 +7,11 @@ import os
 
 from core.utils.finder import find_app_path
 from core.management.commands.add_command import add_new_app_command_voice
+from core.management.commands.delete_command import delete_app_command_voice
 from core.utils.default_commands import load_default_commands
-from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity
+from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
+from core.utils.app_confirm import confirm_app_name_by_dictionary
+from core.utils.answer_classify import matches_action
 
 class Command(BaseCommand):
     # handle - метод який відповідає за точку входу в програму 
@@ -30,12 +33,18 @@ class Command(BaseCommand):
         # with гарантує правильне відкриття та закриття мікрофону
         # source об'єкт з якого буде слухатись звук
         with mic as source:
-            self.stdout.write("Налаштуваня фонового шуму ...")
-            # adjust_for_ambient_noise - метод який визначає рівень фонового шуму
-            # source - наш мікрофон
-            # duration - час на аналіз шуму
-            recognizer.adjust_for_ambient_noise(source, duration = 1)
-            
+            # У вимкненому режимі мікрофон не виконує автоматичну калібровку
+            # фонового шуму і не піднімає поріг чутливості під “шумодав”,
+            # тому звук фіксується більш “сирим” і без агресивного фільтра.
+
+            # Вимикаємо автоматичне підлаштування порогу чутливості.
+            # Це прибирає “шумодав” на рівні SpeechRecognition.
+            recognizer.dynamic_energy_threshold = False
+
+            # Якщо потрібно, можна знизити поріг вручну, щоб ловити тихі слова.
+            # Значення 200 — нижній поріг для більш чутливого захоплення.
+            recognizer.energy_threshold = 200
+
             self.stdout.write(self.style.SUCCESS("Слухаю ..."))
             
             while True:
@@ -62,9 +71,12 @@ class Command(BaseCommand):
     def process_command(self, command_text: str, source, recognizer):
         command_text = command_text.lower().strip()
 
-        is_add_command = find_best_keyword_match(
-            self.default_commands["add_command"], command_text
-        )
+        # для "додати команду"/"видалити команду" звичайного нечіткого пошуку
+        # по всій фразі недостатньо - вони мають спільне слово "команду" і
+        # плутаються одна з одною (схожість фраз ~0.8) при звичайному порозі,
+        # тому порівнюємо лише дієслово-дію
+        is_add_command = matches_action(command_text, self.default_commands["add_command"])
+        is_delete_command = matches_action(command_text, self.default_commands["delete_command"])
         is_close = find_best_keyword_match(
             self.default_commands["close"], command_text
         )
@@ -74,6 +86,10 @@ class Command(BaseCommand):
 
         if is_add_command:
             add_new_app_command_voice(source, recognizer)
+            return
+
+        if is_delete_command:
+            delete_app_command_voice(source, recognizer, self.default_commands, self.stdout)
             return
 
         if is_close:
@@ -97,9 +113,25 @@ class Command(BaseCommand):
         found_app = self.find_app_by_keyword()
 
         if not found_app:
-            speak_async("Я не знайшла такої команди")
+            candidate = extract_app_name(command_text, self.default_commands["open"])
+
+            if not candidate:
+                speak_async("Я не знайшла такої команди")
+                return
+
+            speak_async(f'Я не знайшла команду "{candidate}" в базі. Підберу схожі слова зі словника')
+
+            confirmed_word = confirm_app_name_by_dictionary(
+                candidate, source, recognizer, self.default_commands, self.stdout
+            )
+
+            if not confirmed_word:
+                speak_async("Додавання скасовано")
+                return
+
+            self.register_and_launch_new_app(confirmed_word)
             return
-        
+
         if found_app.path and os.path.exists(found_app.path):
             speak_async(f"Відкриваю {found_app.app_name}")
             self.launch_app(found_app.path)
@@ -116,6 +148,21 @@ class Command(BaseCommand):
             self.launch_app(found_path)
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
+
+    def register_and_launch_new_app(self, word: str):
+        # зберігаємо підтверджене слово одразу і як ключове слово, і як назву застосунку
+        app_command = App_command.objects.create(app_name = word, key_word = word)
+
+        speak_async(f"Слово {word} додано. Шукаю програму")
+        found_path = find_app_path(word)
+
+        if found_path:
+            app_command.path = found_path
+            app_command.save()
+            speak_async(f"Відкриваю {word}")
+            self.launch_app(found_path)
+        else:
+            speak_async(f"Команду {word} додано, але я не змогла знайти таку програму на компʼютері")
 
     def find_app_by_keyword(self):
         best_app = None

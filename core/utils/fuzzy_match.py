@@ -87,3 +87,26 @@ def find_best_keyword_match(variants: list, text: str, threshold: float = DEFAUL
         if fuzzy_word_in_text(variant, text, threshold):
             return True
     return False
+
+
+def extract_app_name(command_text: str, keyword_variants: list, threshold: float = DEFAULT_THRESHOLD) -> str:
+    """
+    Прибирає з фрази слова, що є командним ключовим словом (наприклад "відкрий"/"запусти"),
+    і повертає залишок як ймовірну назву застосунку.
+    Наприклад: "відкрий пейнт" + ["відкрий", ...] -> "пейнт"
+    """
+    keyword_words = set()
+    for variant in keyword_variants:
+        for word in variant.lower().split():
+            keyword_words.add(word)
+
+    remaining = []
+    for word in command_text.split():
+        w = word.lower()
+        is_keyword = w in keyword_words or any(
+            similarity(w, kw) >= threshold for kw in keyword_words
+        )
+        if not is_keyword:
+            remaining.append(word)
+
+    return " ".join(remaining).strip()

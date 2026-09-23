@@ -4,3 +4,4 @@ PyAudio
 edge-tts
 pygame
 asyncio
+requests

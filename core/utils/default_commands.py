@@ -10,7 +10,18 @@ DEFAULT_COMMANDS_PATH = os.path.join(
 
 def load_default_commands() -> dict:
     
-    empty = {"open": [], "close": [], "add_command": []}
+    empty = {
+        "open": [],
+        "close": [],
+        "add_command": [],
+        "delete_command": [],
+        "confirm": [],
+        "deny": [],
+        "cancel": [],
+        "keep": [],
+        "add_letter": [],
+        "remove_letter": [],
+    }
     try:
         with open(DEFAULT_COMMANDS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
