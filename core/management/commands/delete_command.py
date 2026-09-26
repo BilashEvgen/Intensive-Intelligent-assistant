@@ -4,11 +4,8 @@ from core.utils.voice_input import get_voice_input
 from core.utils.fuzzy_match import similarity
 from core.utils.answer_classify import is_cancel, is_confirm
 
-# скільки разів перепитувати ОДИН І ТОЙ САМ крок (ключове слово / підтвердження),
-# перш ніж здатись
 _STEP_ATTEMPTS = 4
 
-# мінімальна схожість, щоб вважати, що ми знайшли саме ту команду, яку назвав користувач
 _MIN_MATCH_SCORE = 0.5
 
 
@@ -26,7 +23,6 @@ def _find_command_by_spoken_keyword(spoken_text: str):
         key_word = app.key_word.lower()
         score = similarity(key_word, spoken_text)
 
-        # якщо одне повністю входить в інше - вважаємо це майже точним збігом
         if key_word in spoken_text or spoken_text in key_word:
             score = max(score, 0.9)
 
@@ -38,13 +34,7 @@ def _find_command_by_spoken_keyword(spoken_text: str):
 
 
 def delete_app_command_voice(source, recognizer, commands: dict, stdout=None):
-    """
-    Голосове видалення збереженої команди з БД:
-    1. питає ключове слово команди, яку треба видалити,
-    2. шукає найбільш схожу команду серед збережених,
-    3. просить підтвердження і видаляє.
-    Розуміє "стоп" на будь-якому кроці - одразу скасовує видалення.
-    """
+    """Видаляє збережену команду голосом після підтвердження."""
     keyword_text = None
 
     for attempt in range(_STEP_ATTEMPTS):

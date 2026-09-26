@@ -22,11 +22,6 @@ def find_app_path(app_name: str):
             text = True
         )
         if result.returncode == 0 and result.stdout.strip():
-            # форматування шляху
-            # result.stdout: перевіяє що вивід не порожній
-            # split("\n"): розділяє на окремі рядки 
-            # [0]: беремо лише перший рядок
-            # .strip(): прибирає зайві пробіли
             path = result.stdout.strip().split("\n")[0].strip()
             if os.path.exists(path):
                 return path
@@ -34,7 +29,6 @@ def find_app_path(app_name: str):
         pass
     
     if system == "Windows":
-    # 
         shortcut_dirs = [
             os.path.expanduser("~\\Desktop"),
             "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs",
@@ -59,48 +53,26 @@ def find_app_path(app_name: str):
             os.environ.get("LOCALAPPDATA", os.path.expanduser("~\\AppData\\Local")),
             os.path.expanduser("~\\AppData\\Roaming")
         ]
-        # 
         extensions = [".exe"]
     else:
-        # 
         search_dirs = [
             "/usr/bin",
             "/usr/local/bin",
             "/Applications",
             os.path.expanduser("~/Applications")
         ]
-        # 
         extensions = ["", ".app"]
     
     for root_dir in search_dirs:
 
         if not os.path.exists(root_dir):
             continue
-        # перебираємо шляхи, папки та файли за допомогою метода os.walk
-        # os.walk: рекурсивно проходиться по всім папкам
         for root, dirs, files in os.walk(root_dir):
             for file in files:
                 for ext in extensions:
-                    # перевіряємо знайдений файл з з файлом який намагаємося знайти
                     if file.lower() == app_name.lower() + ext:
                         return os.path.join(root, file)
-            # обмежуємо глибину пошуку до 3 рівнів
-            # os.sep: роздільник (/ або \)
             if root.count(os.sep) - root_dir.count(os.sep) > 3:
-                # очищує увесь шлях після шляху у списку search_dirs
                 dirs[:] = []
 
     return None
-
-# test_apps = [
-#     {"name": "notepad", "label": "test1(notepad)"},
-#     {"name": "cmd.exe", "label": "test2(cmd)"},
-#     {"name": "telegram.exe", "label": "test3(facebook)"}
-# ]
-
-# for app in test_apps:
-#     path = find_app_path(app["name"])
-#     if path:
-#         print(f"{app["label"]}: Знайдено за шляхом:{path}")
-#     else:
-#         print(f"{app["label"]} програму не знайдено")

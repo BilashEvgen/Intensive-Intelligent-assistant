@@ -14,48 +14,25 @@ from core.utils.app_confirm import confirm_app_name_by_dictionary
 from core.utils.answer_classify import matches_action
 
 class Command(BaseCommand):
-    # handle - метод який відповідає за точку входу в програму 
-    # *args - позіціонні елементи(передаються по порядку)
-    # **options - іменовані параметри(флаги, налаштування та інше)
     def handle(self, *args, **options):
-        # self.stdout.write - правильний спосіб виведення тексту в джанго командах
-        # self.style.SUCCESS - додає зелений колір до тексту
         self.stdout.write(self.style.SUCCESS("Асистен запущений ..."))
 
-        # завантажуємо дефолтні команди (відкрити/закрити/додати команду) з JSON файлу
         self.default_commands = load_default_commands()
         
-        # sr.Recognizer створює об'єкт розпізнавання голосу
         recognizer = sr.Recognizer()
-        # sr.Microphone підключає мікрофон як джерело звуку
         mic = sr.Microphone()
         
-        # with гарантує правильне відкриття та закриття мікрофону
-        # source об'єкт з якого буде слухатись звук
         with mic as source:
-            # У вимкненому режимі мікрофон не виконує автоматичну калібровку
-            # фонового шуму і не піднімає поріг чутливості під “шумодав”,
-            # тому звук фіксується більш “сирим” і без агресивного фільтра.
-
-            # Вимикаємо автоматичне підлаштування порогу чутливості.
-            # Це прибирає “шумодав” на рівні SpeechRecognition.
             recognizer.dynamic_energy_threshold = False
 
-            # Якщо потрібно, можна знизити поріг вручну, щоб ловити тихі слова.
-            # Значення 200 — нижній поріг для більш чутливого захоплення.
             recognizer.energy_threshold = 200
 
             self.stdout.write(self.style.SUCCESS("Слухаю ..."))
             
             while True:
                 try:
-                    # recognizer.listen - метод який слухає користувача
-                    # timeout = None чекає команду від користувача безліч часу
-                    # phrase_time_limit - максимум часу на одну фразу
                     audio = recognizer.listen(source, timeout = None, phrase_time_limit = 5)
 
-                    # recognize_google - метод який відправляє аудіо в гугл апі та отримує текст
-                    # language - мова для розпізнання
                     command_text = recognizer.recognize_google(audio, language = "uk-UA")
                     self.text_variants = recognizer.recognize_google(audio, language = "uk-UA", show_all = True)['alternative']
                     self.stdout.write(f"Ви сказали: {command_text}")
@@ -71,10 +48,6 @@ class Command(BaseCommand):
     def process_command(self, command_text: str, source, recognizer):
         command_text = command_text.lower().strip()
 
-        # для "додати команду"/"видалити команду" звичайного нечіткого пошуку
-        # по всій фразі недостатньо - вони мають спільне слово "команду" і
-        # плутаються одна з одною (схожість фраз ~0.8) при звичайному порозі,
-        # тому порівнюємо лише дієслово-дію
         is_add_command = matches_action(command_text, self.default_commands["add_command"])
         is_delete_command = matches_action(command_text, self.default_commands["delete_command"])
         is_close = find_best_keyword_match(
@@ -102,8 +75,6 @@ class Command(BaseCommand):
             return
 
         if not is_open:
-            # Перебираємо всі об'єкти моделі
-            # objects.all - отримання всіх об'єктів з моделі
             for resp in Voice_response.objects.all():
                 if resp.key_word and fuzzy_word_in_text(resp.key_word, command_text):
                     speak_async(resp.response)
@@ -142,7 +113,6 @@ class Command(BaseCommand):
 
         if found_path:
             found_app.path = found_path
-            #save() - дозволяє зберегти зміни в базі даних 
             found_app.save()
             speak_async(f"Відкриваю {found_app.app_name}")
             self.launch_app(found_path)
@@ -150,7 +120,6 @@ class Command(BaseCommand):
             speak_async(f"Я не змогла знайти цю програму на компе")
 
     def register_and_launch_new_app(self, word: str):
-        # зберігаємо підтверджене слово одразу і як ключове слово, і як назву застосунку
         app_command = App_command.objects.create(app_name = word, key_word = word)
 
         speak_async(f"Слово {word} додано. Шукаю програму")
@@ -176,8 +145,6 @@ class Command(BaseCommand):
                 transcript = element['transcript'].lower()
 
                 if fuzzy_word_in_text(app.key_word, transcript):
-                    # Чем точнее совпадает ключевое слово,
-                    # тем выше приоритет
                     if app.key_word.lower() in transcript:
                         score = 1.0
                     else:
@@ -192,11 +159,8 @@ class Command(BaseCommand):
     def launch_app(self, path):
         try:
             if platform.system() == "Windows":
-                #Стандартний спосіб відкрити програму або файл на Windows
                 os.startfile(path)
             else:
-                #Виконує команду в терміналі 
-                # "open -a" - команда для MacOS чи Linux для вікриття програм
                 os.system("open -a" + path)
         except Exception as err:
             self.stdout.write(self.style.ERROR(f"Помилка запуску {err}"))

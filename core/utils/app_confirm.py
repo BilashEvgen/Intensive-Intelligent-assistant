@@ -6,7 +6,6 @@ from core.utils.dictionary_api import get_suggestions_for_word, get_next_suggest
 
 _CANCEL = "__CANCEL__"
 
-# скільки варіантів зі словника показувати за раз
 _SUGGESTIONS_PAGE_SIZE = 3
 
 
@@ -20,26 +19,7 @@ def confirm_app_name_by_dictionary(
     max_no_response: int = 3,
     page_size: int = _SUGGESTIONS_PAGE_SIZE,
 ):
-    """
-    Замість того щоб перепитувати слово по буквах, звертається до API
-    словника і пропонує користувачу кілька (page_size) найбільш підходящих
-    слів до того, що почув асистент.
-
-    - користувач НАЗИВАЄ НОМЕР одного із запропонованих слів -> це слово
-      підтверджується і повертається;
-    - користувач каже "залиш" (або "так") -> залишаємо саме те слово, яке
-      асистент почув спочатку (heard_word);
-    - користувач каже "не підходить" -> показуємо НАСТУПНІ page_size
-      варіантів зі словника, не повторюючи вже показані;
-    - варіанти зі словника закінчились -> НЕ додаємо нічого автоматично:
-      кажемо, що додаткових варіантів більше немає, знову показуємо (в чаті
-      і голосом) варіанти з першої пропозиції і чекаємо, поки користувач
-      назве номер одного з них, скаже "залиш" (додати heard_word) або
-      "стоп" (скасувати);
-    - "стоп" -> скасування (повертає None).
-
-    Повертає підтверджене слово, або None, якщо скасовано / не вдалось підтвердити.
-    """
+    """Підбирає та підтверджує назву застосунку зі словника."""
     heard_word = app_name.strip()
 
     if not heard_word:
@@ -55,8 +35,6 @@ def confirm_app_name_by_dictionary(
         speak_async(f'Я не знайшла схожих слів у словнику, залишаю слово "{heard_word}" як є')
         return heard_word
 
-    # запам'ятовуємо перший показаний набір варіантів, щоб було до чого
-    # повернутись, коли варіанти зі словника скінчаться
     first_batch = current_batch
 
     need_full_prompt = True
@@ -93,11 +71,9 @@ def confirm_app_name_by_dictionary(
             speak_async("Гаразд, зупиняю підбір слова")
             return None
 
-        # користувач хоче залишити саме те слово, яке асистент почув спочатку
         if is_keep(answer, commands) or is_confirm(answer, commands):
             return heard_word
 
-        # користувач назвав НОМЕР одного із запропонованих варіантів
         position = parse_number(answer)
         if position and 1 <= position <= len(current_batch):
             return current_batch[position - 1]
@@ -115,25 +91,17 @@ def confirm_app_name_by_dictionary(
 
                 current_batch = first_batch
                 options_text = ", ".join(f"{i + 1} - {word}" for i, word in enumerate(current_batch))
-                # speak_task(
-                #     f'Я не знайшла додаткових варіантів. Ось перші варіанти, які я знаходила: {options_text}. '
-                #     f'Назвіть номер потрібного слова, скажіть "залиш" щоб залишити слово {heard_word} як є, '
-                #     f'або "стоп", щоб скасувати'
-                # )
                 need_full_prompt = False
                 continue
 
             need_full_prompt = True
             continue
 
-        # незрозуміла відповідь - короткий перепит без повторного переліку варіантів
         continue
 
     speak_async("Не вдалося підібрати слово, спробуйте ще раз пізніше")
     return None
 
-# скільки разів перепитувати ОДИН І ТОЙ САМ підкрок (наприклад "яку літеру
-# видалити"), перш ніж здатись і повернутись до головного меню дій.
 _SUBSTEP_ATTEMPTS = 4
 
 
@@ -146,25 +114,7 @@ def confirm_app_name_by_spelling(
     max_attempts: int = 8,
     max_no_response: int = 3,
 ):
-    """
-    Асистент один раз озвучує припущену назву застосунку по буквах (з номерами)
-    і одразу пояснює, що можна зробити далі - все в ОДНІЙ репліці:
-        "так" -> підтвердити,
-        номер літери -> замінити її,
-        "додати літеру" / "видалити літеру" -> відредагувати слово,
-        "стоп" -> скасувати.
-
-    Слово повторно озвучується по буквах ЛИШЕ якщо воно змінилось (після
-    редагування). При тиші/незрозумілій відповіді - лише короткий перепит,
-    без повторного читання слова.
-
-    Якщо ж усередині підкроку (наприклад "яку літеру додати") відповідь не
-    почута - асистент перепитує САМЕ ЦЕЙ підкрок ще кілька разів, а не
-    повертається одразу до головного меню дій (щоб не змушувати користувача
-    повторювати номер літери спочатку).
-
-    Повертає підтверджене слово, або None, якщо скасовано / не вдалось підтвердити.
-    """
+    """Підтверджує назву застосунку та дозволяє редагувати її по буквах."""
     current_word = app_name.strip()
 
     if not current_word:
@@ -238,8 +188,6 @@ def confirm_app_name_by_spelling(
                 need_full_prompt = True
             continue
 
-        # незрозуміла відповідь (в тому числі просто "ні" без деталей) -
-        # без повторного читання слова, лише короткий перепит на наступній ітерації
         continue
 
     speak_async("Не вдалося підтвердити слово, спробуйте ще раз пізніше")
@@ -247,12 +195,7 @@ def confirm_app_name_by_spelling(
 
 
 def _ask_position(prompt_text, min_pos, max_pos, source, recognizer, commands, stdout=None):
-    """
-    Питає номер літери (позицію) і НЕ повертається до головного меню дій,
-    поки не отримає коректну відповідь, користувач не скаже "стоп", або не
-    вичерпаються спроби ЦЬОГО САМОГО підкроку.
-    Повертає: число (позиція), _CANCEL, або None (спроби вичерпано).
-    """
+    """Запитує позицію літери або повертає сигнал скасування."""
     for attempt in range(_SUBSTEP_ATTEMPTS):
         if attempt > 0:
             speak_task(prompt_text + ". Повторіть, будь ласка")
@@ -275,12 +218,7 @@ def _ask_position(prompt_text, min_pos, max_pos, source, recognizer, commands, s
 
 
 def _ask_letter(prompt_text, source, recognizer, commands, stdout=None):
-    """
-    Питає нову літеру і НЕ повертається до головного меню дій, поки не
-    отримає відповідь, користувач не скаже "стоп", або не вичерпаються
-    спроби цього самого підкроку.
-    Повертає: літеру (str), _CANCEL, або None (спроби вичерпано).
-    """
+    """Запитує нову літеру або повертає сигнал скасування."""
     for attempt in range(_SUBSTEP_ATTEMPTS):
         if attempt > 0:
             speak_task(prompt_text + ". Повторіть, будь ласка")
@@ -302,7 +240,7 @@ def _ask_letter(prompt_text, source, recognizer, commands, stdout=None):
 
 
 def _replace_letter(word: str, position: int, source, recognizer, commands: dict, stdout=None):
-    """Замінює літеру за вже відомим номером. Повертає нове слово / старе слово / None (стоп)."""
+    """Замінює літеру у слові."""
     if position < 1 or position > len(word):
         speak_task("Такого номера літери немає в слові, спробуємо ще раз")
         return word
@@ -325,7 +263,7 @@ def _replace_letter(word: str, position: int, source, recognizer, commands: dict
 
 
 def _add_letter(word: str, source, recognizer, commands: dict, stdout=None):
-    """Додає нову літеру у слово. Повертає нове слово / старе слово / None (стоп)."""
+    """Додає літеру до слова."""
     max_position = len(word) + 1
 
     position = _ask_position(
@@ -358,7 +296,7 @@ def _add_letter(word: str, source, recognizer, commands: dict, stdout=None):
 
 
 def _remove_letter(word: str, source, recognizer, commands: dict, stdout=None):
-    """Видаляє літеру за номером. Повертає нове слово / старе слово / None (стоп)."""
+    """Видаляє літеру зі слова."""
     if len(word) <= 1:
         speak_task("У слові залишилась лише одна літера, її не можна видалити")
         return word
