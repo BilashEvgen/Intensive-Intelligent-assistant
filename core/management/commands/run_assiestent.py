@@ -1,3 +1,5 @@
+from asyncio import subprocess
+
 from django.core.management.base import BaseCommand
 import speech_recognition as sr
 from core.models import Voice_response, App_command
@@ -107,7 +109,7 @@ class Command(BaseCommand):
             speak_async(f"Відкриваю {found_app.app_name}")
             self.launch_app(found_app.path)
             return
-        
+
         speak_async(f"Шукаю {found_app.app_name}")
         found_path = find_app_path(found_app.app_name)
 
@@ -119,8 +121,20 @@ class Command(BaseCommand):
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
 
-    def register_and_launch_new_app(self, word: str):
-        app_command = App_command.objects.create(app_name = word, key_word = word)
+    def register_and_launch_new_app(self, confirmed):
+        if isinstance(confirmed, dict):
+            word = confirmed.get("name")
+            known_path = confirmed.get("path")
+        else:
+            word = confirmed
+            known_path = None
+
+        app_command = App_command.objects.create(app_name=word, key_word=word, path=known_path)
+
+        if known_path:
+            speak_async(f"Відкриваю {word}")
+            self.launch_app(known_path)
+            return
 
         speak_async(f"Слово {word} додано. Шукаю програму")
         found_path = find_app_path(word)
@@ -136,6 +150,7 @@ class Command(BaseCommand):
     def find_app_by_keyword(self):
         best_app = None
         best_score = 0
+        best_len = 0
 
         for app in App_command.objects.all():
             if not app.key_word:
@@ -150,8 +165,11 @@ class Command(BaseCommand):
                     else:
                         score = similarity(app.key_word.lower(), transcript)
 
-                    if score > best_score:
+                    key_len = len(app.key_word)
+
+                    if score > best_score or (score == best_score and key_len > best_len):
                         best_score = score
+                        best_len = key_len
                         best_app = app
 
         return best_app
@@ -161,25 +179,28 @@ class Command(BaseCommand):
             if platform.system() == "Windows":
                 os.startfile(path)
             else:
-                os.system("open -a" + path)
+                subprocess.run(["open", "-a", path], check=True)
         except Exception as err:
             self.stdout.write(self.style.ERROR(f"Помилка запуску {err}"))
 
-    def close_app(self, app_command):
-        if app_command.path and not app_command.path.lower().endswith(".lnk"):
-            process_name = os.path.basename(app_command.path)
+def close_app(self, app_command):
+    if app_command.path and not app_command.path.lower().endswith(".lnk"):
+        process_name = os.path.basename(app_command.path)
+    else:
+        process_name = app_command.app_name
+    try:
+        if platform.system() == "Windows":
+            if not process_name.lower().endswith(".exe"):
+                process_name += ".exe"
+            result = subprocess.run(["taskkill", "/IM", process_name, "/F"], capture_output=True)
         else:
-            process_name = app_command.app_name
-        try:
-            if platform.system() == "Windows":
-                if not process_name.lower().endswith(".exe"):
-                    process_name += ".exe"
-                result = os.system(f'taskkill /IM "{process_name}" /F')
-            else:
-                if process_name.lower().endswith(".app"):
-                    process_name = process_name[:-4]
-                result = os.system(f'pkill -f "{process_name}"')
-            if result != 0:
-                self.stdout.write(self.style.WARNING(f"Не вдалося знайти запущенний процес {process_name}"))
-        except Exception as err:
-            self.stdout.write(self.style.ERROR(f"Помилка закриття {err}"))
+
+            if process_name.lower().endswith(".app"):
+                process_name = process_name[:-4]
+            result = subprocess.run(["pkill", "-f", process_name], capture_output=True)
+
+        if result.returncode != 0:
+            self.stdout.write(self.style.WARNING(f"Не вдалося знайти запущенний процес {process_name}"))
+
+    except Exception as err:
+        self.stdout.write(self.style.ERROR(f"Помилка закриття {err}"))

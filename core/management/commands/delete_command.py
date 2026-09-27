@@ -2,7 +2,7 @@ from core.models import App_command
 from core.utils.voice_engine import speak_async, speak_task
 from core.utils.voice_input import get_voice_input
 from core.utils.fuzzy_match import similarity
-from core.utils.answer_classify import is_cancel, is_confirm
+from core.utils.answer_classify import is_cancel, is_confirm, classify_answer
 
 _STEP_ATTEMPTS = 4
 
@@ -10,7 +10,7 @@ _MIN_MATCH_SCORE = 0.5
 
 
 def _find_command_by_spoken_keyword(spoken_text: str):
-    """Шукає в БД команду (App_command), чиє ключове слово найбільше схоже на сказане."""
+    """Знаходить команду за схожим ключовим словом."""
     best_app = None
     best_score = 0.0
 
@@ -84,6 +84,20 @@ def delete_app_command_voice(source, recognizer, commands: dict, stdout=None):
             return
 
         if is_confirm(answer, commands):
+            app_name = found_app.app_name
+            found_app.delete()
+            speak_async(f'Команду для "{app_name}" видалено')
+            if stdout:
+                stdout.write(f'Видалено команду "{app_name}" з БД')
+            return
+
+        learned = classify_answer(answer, commands, source, recognizer, stdout)
+
+        if learned in ("deny", "cancel"):
+            speak_async("Гаразд, скасовую видалення")
+            return
+
+        if learned == "confirm":
             app_name = found_app.app_name
             found_app.delete()
             speak_async(f'Команду для "{app_name}" видалено')

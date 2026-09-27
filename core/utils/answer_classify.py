@@ -2,7 +2,6 @@ from core.utils.fuzzy_match import find_best_keyword_match, similarity
 
 ACTION_VERB_THRESHOLD = 0.8
 
-
 def normalize_words(text: str):
     return [w.strip(",.!?") for w in text.lower().split()]
 
@@ -58,3 +57,27 @@ def is_deny(text, commands: dict) -> bool:
     if find_best_keyword_match(commands.get("deny", []), text):
         return True
     return has_negation(text) and not is_cancel(text, commands)
+
+def classify_answer(text, commands: dict, source=None, recognizer=None, stdout=None):
+    """Класифікує відповідь і за потреби навчає нове слово."""
+    if not text:
+        return None
+
+    if is_cancel(text, commands):
+        return "cancel"
+
+    if is_keep(text, commands):
+        return "keep"
+
+    if is_confirm(text, commands):
+        return "confirm"
+
+    if is_deny(text, commands):
+        return "deny"
+
+    if source is None or recognizer is None:
+        return None
+
+    from core.utils.word_learning import learn_new_word
+
+    return learn_new_word(text, commands, source, recognizer, stdout=stdout)
