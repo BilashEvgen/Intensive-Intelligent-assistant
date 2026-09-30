@@ -3,27 +3,28 @@ import os
 
 from core.utils.voice_engine import speak_async, speak_task
 from core.utils.voice_input import get_voice_input
-from core.utils.fuzzy_match import similarity, find_best_keyword_match
+from core.utils.fuzzy_match import similarity
+from core.utils.answer_classify import is_confirm, is_deny
 from core.utils.default_commands import DEFAULT_COMMANDS_PATH
 
-_NEGATION_PREFIXES = ("не", "ні", "ані")
+NEGATION_PREFIXES = ("не", "ні", "ані")
 
-_TYPE_LABELS = {
+TYPE_LABELS = {
     "confirm": "підтвердити",
     "deny": "скасувати",
 }
 
-_LEARN_ATTEMPTS = 3
+LEARN_ATTEMPTS = 3
 
 
-def _looks_like_negation(word: str) -> bool:
+def looks_like_negation(word: str) -> bool:
     """Перевіряє заперечні префікси слова."""
     word = word.lower().strip()
 
     if word in ("не", "ні"):
         return True
 
-    for prefix in _NEGATION_PREFIXES:
+    for prefix in NEGATION_PREFIXES:
         if word.startswith(prefix) and len(word) > len(prefix) + 1:
             return True
 
@@ -37,7 +38,7 @@ def guess_word_type(word: str, commands: dict) -> str:
     if not word:
         return "confirm"
 
-    if _looks_like_negation(word):
+    if looks_like_negation(word):
         return "deny"
 
     best_confirm = max(
@@ -50,7 +51,7 @@ def guess_word_type(word: str, commands: dict) -> str:
     return "deny" if best_deny > best_confirm else "confirm"
 
 
-def _sample_word(commands: dict, category: str) -> str:
+def sample_word(commands: dict, category: str) -> str:
     """Повертає зразок слова для категорії."""
     words = commands.get(category, [])
     if words:
@@ -58,7 +59,7 @@ def _sample_word(commands: dict, category: str) -> str:
     return "так" if category == "confirm" else "ні"
 
 
-def learn_new_word(word: str, commands: dict, source, recognizer, stdout=None, max_attempts: int = _LEARN_ATTEMPTS):
+def learn_new_word(word: str, commands: dict, source, recognizer, stdout=None, max_attempts: int = LEARN_ATTEMPTS):
     """Уточнює тип нового слова та додає його до словника команд."""
     word = (word or "").strip()
 
@@ -66,10 +67,10 @@ def learn_new_word(word: str, commands: dict, source, recognizer, stdout=None, m
         return None
 
     guessed_type = guess_word_type(word, commands)
-    action_label = _TYPE_LABELS[guessed_type]
+    action_label = TYPE_LABELS[guessed_type]
 
-    confirm_sample = _sample_word(commands, "confirm")
-    deny_sample = _sample_word(commands, "deny")
+    confirm_sample = sample_word(commands, "confirm")
+    deny_sample = sample_word(commands, "deny")
 
     prompt = (
         f'Я так зрозуміла, ви хочете {action_label} дію. '
@@ -90,20 +91,21 @@ def learn_new_word(word: str, commands: dict, source, recognizer, stdout=None, m
         if answer is None:
             continue
 
-        if find_best_keyword_match(commands.get("confirm", []), answer):
-            _save_new_word(commands, guessed_type, word, stdout)
+        if is_confirm(answer, commands):
+            save_new_word(commands, guessed_type, word, stdout)
             return guessed_type
 
-        if find_best_keyword_match(commands.get("deny", []), answer):
-            opposite_type = "deny" if guessed_type == "confirm" else "confirm"
-            _save_new_word(commands, opposite_type, word, stdout)
-            return opposite_type
+        if is_deny(answer, commands):
+            if stdout:
+                stdout.write(f'Здогад щодо слова "{word}" відхилено, не додаю його до бази')
+            speak_async(f'Гаразд, не буду додавати слово "{word}"')
+            return None
 
     speak_async("Не вдалося зрозуміти, залишаю без змін")
     return None
 
 
-def _save_new_word(commands: dict, category: str, word: str, stdout=None):
+def save_new_word(commands: dict, category: str, word: str, stdout=None):
     """Зберігає нове слово в пам'яті та файлі команд."""
     word = word.lower().strip()
 

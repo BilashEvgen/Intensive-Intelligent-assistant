@@ -81,8 +81,11 @@ def confirm_app_name_by_dictionary(
             speak_async("Гаразд, зупиняю підбір слова")
             return None
 
-        if is_keep(answer, commands) or is_confirm(answer, commands):
+        if is_keep(answer, commands):
             return heard_word
+
+        if is_confirm(answer, commands):
+            return current_batch[0]
 
         position = parse_number(answer)
         if position and 1 <= position <= len(current_batch):
@@ -97,8 +100,11 @@ def confirm_app_name_by_dictionary(
                 speak_async("Гаразд, зупиняю підбір слова")
                 return None
 
-            if learned in ("keep", "confirm"):
+            if learned == "keep":
                 return heard_word
+
+            if learned == "confirm":
+                return current_batch[0]
 
         if answer_type:
             current_batch, offset = get_next_suggestions(all_suggestions, offset, page_size)

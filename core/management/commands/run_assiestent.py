@@ -1,11 +1,10 @@
-from asyncio import subprocess
-
 from django.core.management.base import BaseCommand
 import speech_recognition as sr
 from core.models import Voice_response, App_command
 from core.utils.voice_engine import speak_async
 import platform
 import os
+import subprocess
 
 from core.utils.finder import find_app_path
 from core.management.commands.add_command import add_new_app_command_voice
@@ -105,7 +104,7 @@ class Command(BaseCommand):
             self.register_and_launch_new_app(confirmed_word)
             return
 
-        if found_app.path and os.path.exists(found_app.path):
+        if found_app.path and self.is_launchable_path(found_app.path):
             speak_async(f"Відкриваю {found_app.app_name}")
             self.launch_app(found_app.path)
             return
@@ -120,6 +119,14 @@ class Command(BaseCommand):
             self.launch_app(found_path)
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
+
+    def is_launchable_path(self, path):
+        """Перевіряє доступність шляху для запуску."""
+        if not path:
+            return False
+        if path.lower().startswith("shell:"):
+            return True
+        return os.path.exists(path)
 
     def register_and_launch_new_app(self, confirmed):
         if isinstance(confirmed, dict):
@@ -156,21 +163,25 @@ class Command(BaseCommand):
             if not app.key_word:
                 continue
 
+            key_word = app.key_word.lower()
+
             for element in self.text_variants:
                 transcript = element['transcript'].lower()
 
-                if fuzzy_word_in_text(app.key_word, transcript):
-                    if app.key_word.lower() in transcript:
-                        score = 1.0
-                    else:
-                        score = similarity(app.key_word.lower(), transcript)
+                if not fuzzy_word_in_text(key_word, transcript):
+                    continue
 
-                    key_len = len(app.key_word)
+                if key_word in transcript:
+                    score = 1.0
+                else:
+                    score = similarity(key_word, transcript)
 
-                    if score > best_score or (score == best_score and key_len > best_len):
-                        best_score = score
-                        best_len = key_len
-                        best_app = app
+                key_len = len(app.key_word)
+
+                if score > best_score or (score == best_score and key_len > best_len):
+                    best_score = score
+                    best_len = key_len
+                    best_app = app
 
         return best_app
             

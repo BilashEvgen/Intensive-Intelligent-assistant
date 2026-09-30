@@ -46,13 +46,7 @@ def fuzzy_word_in_text(keyword: str, text: str, threshold: float = DEFAULT_THRES
             if kw_index == len(keyword_words):
                 return True
 
-        window = len(keyword_words)
-        for i in range(len(text_words) - window + 1):
-            phrase = " ".join(text_words[i:i + window])
-            if similarity(keyword, phrase) >= threshold:
-                return True
-
-        return similarity(keyword, text) >= threshold
+        return False
 
     for word in text.split():
         if similarity(keyword, word) >= threshold:
