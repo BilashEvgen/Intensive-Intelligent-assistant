@@ -41,7 +41,7 @@ def delete_app_command_voice(source, recognizer, commands: dict, stdout=None):
         if attempt == 0:
             speak_task('Яку команду видалити? Назвіть її ключове слово. Або скажіть стоп')
         else:
-            speak_task('Назвіть ключове слово команди для видалення. Повторіть, будь ласка')
+            speak_task('Повторіть, будь ласка')
 
         answer = get_voice_input(source, recognizer, stdout=stdout)
 
@@ -67,12 +67,9 @@ def delete_app_command_voice(source, recognizer, commands: dict, stdout=None):
 
     for attempt in range(_STEP_ATTEMPTS):
         if attempt == 0:
-            speak_task(
-                f'Знайшла команду "{found_app.key_word}" для застосунку "{found_app.app_name}". '
-                f'Видалити її? Скажіть "так", або "стоп", щоб скасувати'
-            )
+            speak_task(f'Видалити "{found_app.app_name}"? "Так" або "стоп"')
         else:
-            speak_task('Скажіть "так", щоб видалити, або "стоп", щоб скасувати')
+            speak_task('"Так" або "стоп"?')
 
         answer = get_voice_input(source, recognizer, stdout=stdout)
 

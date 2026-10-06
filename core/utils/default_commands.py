@@ -1,32 +1,9 @@
-import json
 import os
-
+from core.utils.phrase_db import load_phrases
 DEFAULT_COMMANDS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "data",
     "default_commands.json",
 )
-
-
-def load_default_commands() -> dict:
-    
-    empty = {
-        "open": [],
-        "close": [],
-        "add_command": [],
-        "delete_command": [],
-        "confirm": [],
-        "deny": [],
-        "cancel": [],
-        "keep": [],
-        "add_letter": [],
-        "remove_letter": [],
-    }
-    try:
-        with open(DEFAULT_COMMANDS_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        for category in empty:
-            empty[category] = data.get(category, [])
-        return empty
-    except (FileNotFoundError, json.JSONDecodeError):
-        return empty
+def load_default_commands():
+    return load_phrases()

@@ -57,14 +57,10 @@ def confirm_app_name_by_dictionary(
             if stdout:
                 stdout.write(f'Варіанти для "{heard_word}" ({source_label}): {options_text}')
 
-            speak_task(
-                f'Я почула щось схоже на слово {heard_word}. Можливо, ви мали на увазі: {options_text}. '
-                f'Назвіть номер потрібного варіанта, скажіть "не підходить" щоб почути інші варіанти, '
-                f'"залиш" щоб залишити слово {heard_word} як є, або "стоп", щоб скасувати'
-            )
+            speak_task(f'Почула "{heard_word}". Варіанти: {options_text}. Назвіть номер для вибору, "не підходить" для інших варіантів, "залиш" або "стоп"')
             need_full_prompt = False
         else:
-            speak_task('Назвіть номер потрібного варіанта, скажіть "не підходить", "залиш", або "стоп"')
+            speak_task('Номер, "не підходить", "залиш" або "стоп"')
 
         answer = get_voice_input(source, recognizer, stdout=stdout)
 

@@ -6,7 +6,7 @@ from core.utils.voice_input import get_voice_input
 from core.utils.fuzzy_match import similarity
 from core.utils.answer_classify import is_confirm, is_deny
 from core.utils.default_commands import DEFAULT_COMMANDS_PATH
-
+from core.utils.phrase_db import add_phrase
 NEGATION_PREFIXES = ("не", "ні", "ані")
 
 TYPE_LABELS = {
@@ -72,19 +72,14 @@ def learn_new_word(word: str, commands: dict, source, recognizer, stdout=None, m
     confirm_sample = sample_word(commands, "confirm")
     deny_sample = sample_word(commands, "deny")
 
-    prompt = (
-        f'Я так зрозуміла, ви хочете {action_label} дію. '
-        f'Скажіть "{confirm_sample}", якщо так, або "{deny_sample}", якщо ні'
-    )
+    prompt = f'Правильно зрозуміла: {action_label}? Скажіть "{confirm_sample}" щоб зберегти або "{deny_sample}" щоб відхилити'
+    retry_prompt = f'"{confirm_sample}" або "{deny_sample}"?'
 
     if stdout:
         stdout.write(f'Невідоме слово "{word}", ймовірний тип: {guessed_type}')
 
     for attempt in range(max_attempts):
-        if attempt == 0:
-            speak_task(prompt)
-        else:
-            speak_task(f'Скажіть "{confirm_sample}", якщо так, або "{deny_sample}", якщо ні')
+        speak_task(prompt if attempt == 0 else retry_prompt)
 
         answer = get_voice_input(source, recognizer, stdout=stdout)
 
@@ -106,7 +101,7 @@ def learn_new_word(word: str, commands: dict, source, recognizer, stdout=None, m
 
 
 def save_new_word(commands: dict, category: str, word: str, stdout=None):
-    """Зберігає нове слово в пам'яті та файлі команд."""
+    """Зберігає нове слово в пам'яті (для поточного сеансу) і в БД (назавжди)."""
     word = word.lower().strip()
 
     if not word:
@@ -118,22 +113,12 @@ def save_new_word(commands: dict, category: str, word: str, stdout=None):
     commands.setdefault(category, []).append(word)
 
     try:
-        if os.path.exists(DEFAULT_COMMANDS_PATH):
-            with open(DEFAULT_COMMANDS_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        else:
-            data = {}
-
-        data.setdefault(category, [])
-        if word not in data[category]:
-            data[category].append(word)
-
-        with open(DEFAULT_COMMANDS_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-
+        added = add_phrase(category = category,word = word)
         if stdout:
-            stdout.write(f'Нове слово "{word}" додано в категорію "{category}"')
-
+            if added:
+                stdout.write(f"Нове слово '{word}' додано до категорії  '{category}'")
+            else:
+                stdout.write(f"Слово '{word}' вже є у категорії  '{category}'")
     except (OSError, json.JSONDecodeError) as err:
         if stdout:
             stdout.write(f'Не вдалося зберегти нове слово у файл: {err}')

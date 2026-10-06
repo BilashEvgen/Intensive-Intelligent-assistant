@@ -5,3 +5,4 @@ edge-tts
 pygame
 asyncio
 requests
+SQLAlchemy

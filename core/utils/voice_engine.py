@@ -11,8 +11,9 @@ def speak_task(text: str):
     file_name = f"voice_{int(time.time())}.mp3"
     try:
         VOICE = "uk-UA-PolinaNeural"
+        RATE = "+20%" 
         async def generate():
-            communicate = edge_tts.Communicate(text, VOICE)
+            communicate = edge_tts.Communicate(text, VOICE, rate=RATE)
             await communicate.save(file_name)
             
         loop = asyncio.new_event_loop()

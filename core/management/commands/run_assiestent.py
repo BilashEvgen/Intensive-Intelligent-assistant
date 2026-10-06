@@ -13,12 +13,15 @@ from core.utils.default_commands import load_default_commands
 from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
 from core.utils.app_confirm import confirm_app_name_by_dictionary
 from core.utils.answer_classify import matches_action
+from core.utils.discovery_app import scan_and_store_apps_async
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Асистен запущений ..."))
 
         self.default_commands = load_default_commands()
+        
+        scan_and_store_apps_async(self.stdout)
         
         recognizer = sr.Recognizer()
         mic = sr.Microphone()
@@ -59,7 +62,7 @@ class Command(BaseCommand):
         )
 
         if is_add_command:
-            add_new_app_command_voice(source, recognizer)
+            add_new_app_command_voice(source, recognizer, self.default_commands, self.stdout)
             return
 
         if is_delete_command:
