@@ -1,3 +1,5 @@
+from django.utils import timezone
+
 from django.db import models
 
 class Voice_response(models.Model):
@@ -13,7 +15,14 @@ class App_command(models.Model):
     def __str__(self):
         return f"Запуск {self.app_name} за словом {self.key_word}"
 
+class App_usage(models.Model):
+    name = models.CharField(max_length = 200, verbose_name = "Назва застосунку")
+    path = models.CharField(max_length = 500, unique = True, verbose_name = "Шлях")
+    launch_count = models.PositiveIntegerField(default = 0, verbose_name = "Кількість запусків")
+    last_used_at = models.DateTimeField(default = timezone.now, verbose_name = "Останній запуск")
 
+    def __str__(self):
+        return f"{self.name} ({self.launch_count})"
 
 class Discovered_app(models.Model):
     name = models.CharField(max_length = 200, verbose_name = "Назва застосунку")

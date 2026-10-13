@@ -113,12 +113,11 @@ def save_new_word(commands: dict, category: str, word: str, stdout=None):
     commands.setdefault(category, []).append(word)
 
     try:
-        added = add_phrase(category = category,word = word)
+        added = add_phrase(category = category, phrase = word)
+    except Exception as err:
         if stdout:
-            if added:
-                stdout.write(f"Нове слово '{word}' додано до категорії  '{category}'")
-            else:
-                stdout.write(f"Слово '{word}' вже є у категорії  '{category}'")
-    except (OSError, json.JSONDecodeError) as err:
-        if stdout:
-            stdout.write(f'Не вдалося зберегти нове слово у файл: {err}')
+            stdout.write(f"Не вдалося зберегти слово у БД: {err}")
+        return
+    commands.setdefault(category, []).append(word)
+    if stdout:
+        stdout.write(f"Слово '{word}' {'додано до' if added else 'вже є в'} '{category}'")

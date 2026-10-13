@@ -4,12 +4,81 @@ from core.utils.spelling import parse_number
 from core.utils.answer_classify import is_cancel, is_confirm, is_deny, is_keep, classify_answer
 from core.utils.dictionary_api import get_suggestions_for_word, get_next_suggestions
 from core.utils.system_apps import find_matching_apps
+from core.utils.app_usage import get_primary_catalog, pick_top_suggestion
 
 SUGGESTIONS_PAGE_SIZE = 3
 
 def display_name(item) -> str:
     """Повертає назву варіанта для показу."""
     return item["name"] if isinstance(item, dict) else item
+
+def offer_top_app(
+    app: dict,
+    reason: str,
+    source,
+    recognizer,
+    commands: dict,
+    stdout=None,
+    max_attempts: int = 3,
+    max_no_response: int = 3,
+):
+    """Пропонує відкрити одразу найкращий застосунок.
+
+    Повертає: "accept" - відкрити, "deny" - показати список,
+    "keep" - залишити слово як є, "cancel" - зупинити підбір.
+    """
+    name = display_name(app)
+
+    if reason == "usage":
+        prompt = f"Ви часто відкриваєте {name}. Відкрити його?"
+    else:
+        prompt = f"Відкрити {name}?"
+
+    retry_prompt = f'Відкрити {name}? Скажіть "так" або "ні"'
+
+    if stdout:
+        stdout.write(f"Пропоную відкрити одразу: {name}")
+
+    attempt = 0
+    no_response_streak = 0
+
+    while attempt < max_attempts:
+        speak_task(prompt if attempt == 0 else retry_prompt)
+
+        answer = get_voice_input(source, recognizer, stdout=stdout)
+
+        if answer is None:
+            no_response_streak += 1
+            if no_response_streak >= max_no_response:
+                speak_async("Я вас не чую, спробуйте пізніше")
+                return "cancel"
+            continue
+
+        no_response_streak = 0
+        attempt += 1
+
+        # Номер стосується списку, який ще не озвучено - показуємо список
+        if parse_number(answer) is not None:
+            return "deny"
+
+        # Знайоме слово класифікується, невідоме - запускається learn_new_word
+        result = classify_answer(answer, commands, source, recognizer, stdout)
+
+        if result == "confirm":
+            return "accept"
+
+        if result == "deny":
+            return "deny"
+
+        if result == "keep":
+            return "keep"
+
+        if result == "cancel":
+            speak_async("Гаразд, зупиняю підбір слова")
+            return "cancel"
+
+    return "deny"
+
 
 def confirm_app_name_by_dictionary(
     app_name: str,
@@ -27,7 +96,7 @@ def confirm_app_name_by_dictionary(
     if not heard_word:
         return None
 
-    system_matches = find_matching_apps(heard_word)
+    system_matches = find_matching_apps(heard_word, apps=get_primary_catalog())
 
     if system_matches:
         all_suggestions = [{"name": app["name"], "path": app["path"]} for app in system_matches]
@@ -44,6 +113,21 @@ def confirm_app_name_by_dictionary(
             stdout.write(f'Не знайдено варіантів для "{heard_word}", залишаю його як є')
         speak_async(f'Я не знайшла схожих варіантів, залишаю слово "{heard_word}" як є')
         return heard_word
+
+    if system_matches:
+        top_app, reason = pick_top_suggestion(heard_word, system_matches)
+
+        if top_app:
+            decision = offer_top_app(top_app, reason, source, recognizer, commands, stdout)
+
+            if decision == "accept":
+                return top_app
+
+            if decision == "keep":
+                return heard_word
+
+            if decision == "cancel":
+                return None
 
     first_batch = current_batch
 

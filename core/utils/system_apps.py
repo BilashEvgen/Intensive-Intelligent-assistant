@@ -29,7 +29,7 @@ def scan_shortcuts_windows() -> dict:
     return apps
 
 
-_NOISE_EXE_PATTERNS = (
+NOISE_EXE_PATTERNS = (
     "unins", "uninstall", "setup", "install", "update", "updater",
     "helper", "crashpad", "crashhandler", "vcredist", "vc_redist",
     "redist", "report", "diagnostic", "repair",
@@ -39,7 +39,7 @@ _NOISE_EXE_PATTERNS = (
 def is_noise_exe(filename: str) -> bool:
     """Перевіряє, чи є exe службовим."""
     name = filename.lower()
-    return any(pattern in name for pattern in _NOISE_EXE_PATTERNS)
+    return any(pattern in name for pattern in NOISE_EXE_PATTERNS)
 
 
 def scan_program_files_windows(max_depth: int = 4) -> dict:
@@ -80,9 +80,11 @@ def scan_start_apps_windows() -> dict:
     apps = {}
     try:
         result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Get-StartApps | ConvertTo-Json -Compress"],
+            ["powershell", "-NoProfile", "-Command",
+             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-StartApps | ConvertTo-Json -Compress"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             errors="replace",
             timeout=10,
         )
@@ -188,17 +190,38 @@ def app_match_score(candidate: str, app_name: str) -> float:
     return word_score * 0.75 + whole_score * 0.25
 
 
-def find_matching_apps(candidate: str, min_score: float = MIN_MATCH_SCORE, limit: int = 15) -> list:
+def find_matching_apps(candidate: str, min_score: float = MIN_MATCH_SCORE, limit: int = 15, apps: list = None) -> list:
     """Знаходить застосунки зі схожою назвою."""
     candidate = (candidate or "").strip()
     if not candidate:
         return []
 
     scored = []
-    for app in list_installed_apps():
+    if apps is None:
+        apps = list_installed_apps()
+
+    for app in apps:
         score = app_match_score(candidate, app["name"])
         if score >= min_score:
             scored.append((score, app))
 
     scored.sort(key=lambda pair: pair[0], reverse=True)
     return [app for _, app in scored[:limit]]
+
+def normalize_app_path(path: str) -> str:
+    """Додає shell:AppsFolder до ідентифікаторів застосунків (AppUserModelID), які не є файлами."""
+    path = (path or "").strip()
+
+    if platform.system() != "Windows":
+        return path
+
+    if not path or path.lower().startswith("shell:") or os.path.exists(path):
+        return path
+
+    if path.startswith("{") or "!" in path:
+        return "shell:AppsFolder\\" + path
+
+    if "\\" in path or "/" in path or path.lower().endswith((".exe", ".lnk", ".bat", ".cmd")):
+        return path
+
+    return "shell:AppsFolder\\" + path

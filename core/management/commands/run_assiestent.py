@@ -14,6 +14,9 @@ from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, 
 from core.utils.app_confirm import confirm_app_name_by_dictionary
 from core.utils.answer_classify import matches_action
 from core.utils.discovery_app import scan_and_store_apps_async
+from core.utils.process_watcher import start_process_watcher_async, register_assistant_launch
+from core.utils.system_apps import normalize_app_path
+
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
@@ -22,6 +25,7 @@ class Command(BaseCommand):
         self.default_commands = load_default_commands()
         
         scan_and_store_apps_async(self.stdout)
+        start_process_watcher_async(stdout= self.stdout)
         
         recognizer = sr.Recognizer()
         mic = sr.Microphone()
@@ -109,7 +113,7 @@ class Command(BaseCommand):
 
         if found_app.path and self.is_launchable_path(found_app.path):
             speak_async(f"Відкриваю {found_app.app_name}")
-            self.launch_app(found_app.path)
+            self.launch_app(found_app.path, found_app.app_name)
             return
 
         speak_async(f"Шукаю {found_app.app_name}")
@@ -119,12 +123,13 @@ class Command(BaseCommand):
             found_app.path = found_path
             found_app.save()
             speak_async(f"Відкриваю {found_app.app_name}")
-            self.launch_app(found_path)
+            self.launch_app(found_path, found_app.app_name)
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
 
     def is_launchable_path(self, path):
         """Перевіряє доступність шляху для запуску."""
+        path = normalize_app_path(path)
         if not path:
             return False
         if path.lower().startswith("shell:"):
@@ -143,7 +148,7 @@ class Command(BaseCommand):
 
         if known_path:
             speak_async(f"Відкриваю {word}")
-            self.launch_app(known_path)
+            self.launch_app(known_path, word)
             return
 
         speak_async(f"Слово {word} додано. Шукаю програму")
@@ -153,7 +158,7 @@ class Command(BaseCommand):
             app_command.path = found_path
             app_command.save()
             speak_async(f"Відкриваю {word}")
-            self.launch_app(found_path)
+            self.launch_app(found_path, word)
         else:
             speak_async(f"Команду {word} додано, але я не змогла знайти таку програму на компʼютері")
 
@@ -188,7 +193,8 @@ class Command(BaseCommand):
 
         return best_app
             
-    def launch_app(self, path):
+    def launch_app(self, path, name = None):
+        path = normalize_app_path(path)
         try:
             if platform.system() == "Windows":
                 os.startfile(path)
@@ -196,25 +202,31 @@ class Command(BaseCommand):
                 subprocess.run(["open", "-a", path], check=True)
         except Exception as err:
             self.stdout.write(self.style.ERROR(f"Помилка запуску {err}"))
-
-def close_app(self, app_command):
-    if app_command.path and not app_command.path.lower().endswith(".lnk"):
-        process_name = os.path.basename(app_command.path)
-    else:
-        process_name = app_command.app_name
-    try:
-        if platform.system() == "Windows":
-            if not process_name.lower().endswith(".exe"):
-                process_name += ".exe"
-            result = subprocess.run(["taskkill", "/IM", process_name, "/F"], capture_output=True)
+            return
+        
+        try:
+            register_assistant_launch(name or os.path.splitext(os.path.basename(path))[0], path)
+        except Exception as error:
+            self.stdout.write(self.style.WARNING(f"Не вдалося записати запуск {error}"))
+            
+    def close_app(self, app_command):
+        if app_command.path and not app_command.path.lower().endswith(".lnk"):
+            process_name = os.path.basename(app_command.path)
         else:
+            process_name = app_command.app_name
+        try:
+            if platform.system() == "Windows":
+                if not process_name.lower().endswith(".exe"):
+                    process_name += ".exe"
+                result = subprocess.run(["taskkill", "/IM", process_name, "/F"], capture_output=True)
+            else:
 
-            if process_name.lower().endswith(".app"):
-                process_name = process_name[:-4]
-            result = subprocess.run(["pkill", "-f", process_name], capture_output=True)
+                if process_name.lower().endswith(".app"):
+                    process_name = process_name[:-4]
+                result = subprocess.run(["pkill", "-f", process_name], capture_output=True)
 
-        if result.returncode != 0:
-            self.stdout.write(self.style.WARNING(f"Не вдалося знайти запущенний процес {process_name}"))
+            if result.returncode != 0:
+                self.stdout.write(self.style.WARNING(f"Не вдалося знайти запущенний процес {process_name}"))
 
-    except Exception as err:
-        self.stdout.write(self.style.ERROR(f"Помилка закриття {err}"))
+        except Exception as err:
+            self.stdout.write(self.style.ERROR(f"Помилка закриття {err}"))

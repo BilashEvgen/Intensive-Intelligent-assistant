@@ -6,3 +6,4 @@ pygame
 asyncio
 requests
 SQLAlchemy
+psutil
