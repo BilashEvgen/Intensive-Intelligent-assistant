@@ -2,11 +2,13 @@ from core.utils.voice_engine import speak_async, speak_task
 from core.utils.voice_input import get_voice_input
 from core.utils.spelling import parse_number
 from core.utils.answer_classify import is_cancel, is_confirm, is_deny, is_keep, classify_answer
-from core.utils.dictionary_api import get_suggestions_for_word, get_next_suggestions
 from core.utils.system_apps import find_matching_apps
 from core.utils.app_usage import get_primary_catalog, pick_top_suggestion
 
 SUGGESTIONS_PAGE_SIZE = 3
+
+def get_next_suggestions(all_suggestions: list, offset: int, limit: int = 3):
+    return all_suggestions[offset : offset+limit ], offset + limit
 
 def display_name(item) -> str:
     """Повертає назву варіанта для показу."""
@@ -80,7 +82,7 @@ def offer_top_app(
     return "deny"
 
 
-def confirm_app_name_by_dictionary(
+def confirm_app_from_catalog(
     app_name: str,
     source,
     recognizer,
@@ -98,54 +100,51 @@ def confirm_app_name_by_dictionary(
 
     system_matches = find_matching_apps(heard_word, apps=get_primary_catalog())
 
-    if system_matches:
-        all_suggestions = [{"name": app["name"], "path": app["path"]} for app in system_matches]
-        source_label = "серед встановлених застосунків"
-    else:
-        all_suggestions = get_suggestions_for_word(heard_word)
-        source_label = "у словнику"
+    if not system_matches:
+        if stdout:
+            stdout.write(f"Не знайдено програм схожих на {heard_word}")
+            speak_async(f"Я не знайла програму {heard_word} на комп'ютері")
+        
+        return None
+    all_suggestions = [{"name": app["name"], "path": app["path"]} for app in system_matches]
+    source_label = "серед встановлених застосунків"
 
     offset = 0
     current_batch, offset = get_next_suggestions(all_suggestions, offset, page_size)
 
-    if not current_batch:
-        if stdout:
-            stdout.write(f'Не знайдено варіантів для "{heard_word}", залишаю його як є')
-        speak_async(f'Я не знайшла схожих варіантів, залишаю слово "{heard_word}" як є')
-        return heard_word
-
-    if system_matches:
-        top_app, reason = pick_top_suggestion(heard_word, system_matches)
-
-        if top_app:
-            decision = offer_top_app(top_app, reason, source, recognizer, commands, stdout)
-
-            if decision == "accept":
-                return top_app
-
-            if decision == "keep":
-                return heard_word
-
-            if decision == "cancel":
-                return None
-
+    top_app, reason = pick_top_suggestion(heard_word, system_matches)
+    if top_app:
+        decision = offer_top_app(
+            top_app, 
+            reason, 
+            source, 
+            recognizer, 
+            commands, 
+            stdout
+        )
+        
+        if decision == "accept":
+            return top_app
+        if decision == "keep":
+            return heard_word
+        if decision == "cancel":
+            return None
+        
     first_batch = current_batch
-
+    
     need_full_prompt = True
     no_response_streak = 0
-
-    for _ in range(max_attempts):
+    
+    for i in range(max_attempts):
         if need_full_prompt:
-            options_text = ", ".join(f"{i + 1} - {display_name(word)}" for i, word in enumerate(current_batch))
-
+            options_text = ", ".join(f"{a + 1} - {display_name(word)}" for a, word in enumerate(current_batch))
             if stdout:
-                stdout.write(f'Варіанти для "{heard_word}" ({source_label}): {options_text}')
-
-            speak_task(f'Почула "{heard_word}". Варіанти: {options_text}. Назвіть номер для вибору, "не підходить" для інших варіантів, "залиш" або "стоп"')
-            need_full_prompt = False
+                stdout.write(f"Варіанти для {heard_word}({source_label}):{options_text}")
+            speak_async(f"Почула {heard_word}. Варіанти: {options_text}. Назвіть номер для вибору, 'не підходить' для інших варіантів, 'залиш' або 'стоп'")
+            need_full_prompt = False 
         else:
-            speak_task('Номер, "не підходить", "залиш" або "стоп"')
-
+            speak_task("Номер, 'не підходить', 'залиш' або 'стоп'")
+            
         answer = get_voice_input(source, recognizer, stdout=stdout)
 
         if answer is None:

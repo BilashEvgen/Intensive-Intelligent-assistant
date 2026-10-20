@@ -2,6 +2,7 @@ import json
 import os
 import platform
 import subprocess
+import re
 
 from core.utils.fuzzy_match import similarity
 MIN_MATCH_SCORE = 0.55
@@ -189,7 +190,32 @@ def app_match_score(candidate: str, app_name: str) -> float:
 
     return word_score * 0.75 + whole_score * 0.25
 
+CYRILLIC_TO_LATIN = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "ґ": "g", "д": "d", "е": "e", "є": "e", "ж": "zh",
+    "з": "z", "и": "i", "і": "i", "ї": "i", "й": "i", "к": "k", "л": "l", "м": "m", "н": "n",
+    "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "ts",
+    "ч": "h", "ш": "sh", "щ": "sh", "ы": "i", "э": "e", "ю": "u", "я": "a", "ё": "o",
+    "ь": "", "ъ": "", "'": "", "’": "", "ʼ": "",
+}
 
+LATIN_SOUND_RULES = (
+    ("ph", "f"), ("kh", "h"), ("ch", "h"), ("ck", "k"), ("ea", "i"), ("ee", "i"), ("oo", "u"),
+    ("c", "k"), ("q", "k"), ("w", "v"), ("x", "ks"), ("y", "i"),
+)
+
+def phonetic_fold(text: str):
+    text = "".join(CYRILLIC_TO_LATIN.get(ch, ch) for ch in text.lower())
+    for old, new in LATIN_SOUND_RULES:
+        text = text.replace(old, new)
+    text = re.sub(r"(.)\1+", r"(.)\1", text)
+    text = re.sub(r"(?<=\w\w\w)e\b", "", text)
+    return text
+
+def raw_match_score(candidate: str, app_name: str):
+    word_score = word_level_score(candidate = candidate,app_name = app_name)
+    whole_score = similarity(candidate, app_name)
+    return word_score * 0.75 + whole_score * 0.25
+    
 def find_matching_apps(candidate: str, min_score: float = MIN_MATCH_SCORE, limit: int = 15, apps: list = None) -> list:
     """Знаходить застосунки зі схожою назвою."""
     candidate = (candidate or "").strip()

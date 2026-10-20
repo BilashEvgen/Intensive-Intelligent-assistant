@@ -74,7 +74,7 @@ def flush_pending(now: float, stdout=None):
 
     for item in expired:
         target = resolve_shortcut_target(item["path"])
-        if count_launch(item["name"], target, now) and stdout:
+        if count_launch(item["name"], target, now, window=PENDING_TTL + 2 * POLL_INTERVAL) and stdout:
             stdout.write(f"Запам'ятала запуск: {item['name']}")
 
 

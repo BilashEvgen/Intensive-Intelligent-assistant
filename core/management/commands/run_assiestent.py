@@ -11,11 +11,13 @@ from core.management.commands.add_command import add_new_app_command_voice
 from core.management.commands.delete_command import delete_app_command_voice
 from core.utils.default_commands import load_default_commands
 from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
-from core.utils.app_confirm import confirm_app_name_by_dictionary
 from core.utils.answer_classify import matches_action
 from core.utils.discovery_app import scan_and_store_apps_async
 from core.utils.process_watcher import start_process_watcher_async, register_assistant_launch
 from core.utils.system_apps import normalize_app_path
+from core.utils.app_confirm import confirm_app_from_catalog
+from core.utils.voice_input import configure_recognizer, recognize_variants
+from core.utils.system_launcher import (find_system_target, launch_system_target, SYSTEM_WATCH_STRICT, SYSTEM_WATCH_LOOSE)
 
 
 class Command(BaseCommand):
@@ -31,18 +33,19 @@ class Command(BaseCommand):
         mic = sr.Microphone()
         
         with mic as source:
-            recognizer.dynamic_energy_threshold = False
-
-            recognizer.energy_threshold = 200
 
             self.stdout.write(self.style.SUCCESS("Слухаю ..."))
             
             while True:
                 try:
                     audio = recognizer.listen(source, timeout = None, phrase_time_limit = 5)
-
-                    command_text = recognizer.recognize_google(audio, language = "uk-UA")
-                    self.text_variants = recognizer.recognize_google(audio, language = "uk-UA", show_all = True)['alternative']
+                    variants = recognize_variants(recognizer, audio)
+                    if not variants:
+                        continue
+                    
+                    command_text = variants[0]
+                    
+                    self.text_variants = [{"transcript": text} for text in variants]
                     self.stdout.write(f"Ви сказали: {command_text}")
                     self.process_command(command_text, source, recognizer)
                     
@@ -88,10 +91,22 @@ class Command(BaseCommand):
                     speak_async(resp.response)
                     return
             return
-
+        
+        candidates = self.open_candidates(command_text)
+        system_entry = find_system_target(candidates, SYSTEM_WATCH_STRICT)
+        if system_entry:
+            self.open_system_target(system_entry)
+            return
+        
         found_app = self.find_app_by_keyword()
 
         if not found_app:
+            system_entry = find_system_target(candidates, SYSTEM_WATCH_LOOSE)
+            
+            if system_entry:
+                self.open_system_target(system_entry)
+                return
+            
             candidate = extract_app_name(command_text, self.default_commands["open"])
 
             if not candidate:
@@ -100,7 +115,7 @@ class Command(BaseCommand):
 
             speak_async(f'Я не знайшла команду "{candidate}" в базі. Підберу схожі слова зі словника')
 
-            confirmed_word = confirm_app_name_by_dictionary(
+            confirmed_word = confirm_app_from_catalog(
                 candidate, source, recognizer, self.default_commands, self.stdout
             )
 
@@ -161,6 +176,23 @@ class Command(BaseCommand):
             self.launch_app(found_path, word)
         else:
             speak_async(f"Команду {word} додано, але я не змогла знайти таку програму на компʼютері")
+            
+    def open_candidates(self, command_text):
+        texts = [command_text] + [item.get("transcript", "") for item in getattr(self, "text_variants", [])]
+        candidates = []
+        for text in texts:
+            candidate = extract_app_name(text.lower().strip(), self.default_commands["open"])
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+    
+    def open_system_target(self, entry: dict):
+        speak_async(f"Відкриваю {entry["title"]}")
+        try:
+            launch_system_target(entry)
+        except Exception as err:
+            self.stdout.write(self.style.ERROR(f"Помилка запуску {entry["title"]}: {err}"))
+            speak_async("Не вдалося відкрити")
 
     def find_app_by_keyword(self):
         best_app = None
