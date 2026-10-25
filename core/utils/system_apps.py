@@ -1,8 +1,8 @@
 import json
 import os
+import re
 import platform
 import subprocess
-import re
 
 from core.utils.fuzzy_match import similarity
 MIN_MATCH_SCORE = 0.55
@@ -180,16 +180,6 @@ def word_level_score(candidate: str, app_name: str) -> float:
     return min(per_word_scores)
 
 
-def app_match_score(candidate: str, app_name: str) -> float:
-    """Обчислює оцінку схожості назв."""
-    candidate = candidate.lower().strip()
-    app_name = app_name.lower().strip()
-
-    word_score = word_level_score(candidate, app_name)
-    whole_score = similarity(candidate, app_name)
-
-    return word_score * 0.75 + whole_score * 0.25
-
 CYRILLIC_TO_LATIN = {
     "а": "a", "б": "b", "в": "v", "г": "g", "ґ": "g", "д": "d", "е": "e", "є": "e", "ж": "zh",
     "з": "z", "и": "i", "і": "i", "ї": "i", "й": "i", "к": "k", "л": "l", "м": "m", "н": "n",
@@ -203,19 +193,37 @@ LATIN_SOUND_RULES = (
     ("c", "k"), ("q", "k"), ("w", "v"), ("x", "ks"), ("y", "i"),
 )
 
-def phonetic_fold(text: str):
+
+def phonetic_fold(text: str) -> str:
+    """Приводить назву до спрощеного латинського звучання (хром -> hrom, chrome -> hrom)."""
     text = "".join(CYRILLIC_TO_LATIN.get(ch, ch) for ch in text.lower())
+
     for old, new in LATIN_SOUND_RULES:
         text = text.replace(old, new)
-    text = re.sub(r"(.)\1+", r"(.)\1", text)
+
+    text = re.sub(r"(.)\1+", r"\1", text)
     text = re.sub(r"(?<=\w\w\w)e\b", "", text)
     return text
 
-def raw_match_score(candidate: str, app_name: str):
-    word_score = word_level_score(candidate = candidate,app_name = app_name)
+
+def raw_match_score(candidate: str, app_name: str) -> float:
+    word_score = word_level_score(candidate, app_name)
     whole_score = similarity(candidate, app_name)
+
     return word_score * 0.75 + whole_score * 0.25
-    
+
+
+def app_match_score(candidate: str, app_name: str) -> float:
+    """Обчислює оцінку схожості назв (враховує, що вимовлене кирилицею може бути написане латиницею)."""
+    candidate = candidate.lower().strip()
+    app_name = app_name.lower().strip()
+
+    direct = raw_match_score(candidate, app_name)
+    phonetic = raw_match_score(phonetic_fold(candidate), phonetic_fold(app_name))
+
+    return max(direct, phonetic)
+
+
 def find_matching_apps(candidate: str, min_score: float = MIN_MATCH_SCORE, limit: int = 15, apps: list = None) -> list:
     """Знаходить застосунки зі схожою назвою."""
     candidate = (candidate or "").strip()

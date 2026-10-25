@@ -1,10 +1,12 @@
 import os
 import platform
+
 from core.utils.system_apps import app_match_score
 
-SYSTEM_WATCH_STRICT = 0.85
-SYSTEM_WATCH_LOOSE = 0.7
+SYSTEM_MATCH_STRICT = 0.85
+SYSTEM_MATCH_LOOSE = 0.7
 
+# Вбудовані застосунки та розділи Windows: (назва, запуск, варіанти назв українською/російською/англійською)
 SYSTEM_TARGETS = (
     {"title": "Параметри", "target": "ms-settings:",
     "names": ["параметри", "параметри windows", "параметри віндовс", "налаштування", "налаштування windows",
@@ -58,13 +60,17 @@ SYSTEM_TARGETS = (
     "names": ["диспетчер пристроїв", "device manager", "диспетчер устройств"]},
 )
 
-def find_system_target(candidats: list, min_score: float = SYSTEM_WATCH_STRICT):
+
+def find_system_target(candidates: list, min_score: float = SYSTEM_MATCH_STRICT):
+    """Шукає вбудований застосунок або розділ Windows за почутою назвою."""
     best = None
     best_key = (0.0, 0)
-    for candidate in candidats:
+
+    for candidate in candidates:
         candidate = (candidate or "").lower().strip()
         if not candidate:
             continue
+
         for entry in SYSTEM_TARGETS:
             for name in entry["names"]:
                 score = app_match_score(candidate, name)
@@ -72,15 +78,26 @@ def find_system_target(candidats: list, min_score: float = SYSTEM_WATCH_STRICT):
                 if score >= min_score and key > best_key:
                     best_key = key
                     best = entry
+
     return best
 
+
 def launch_system_target(entry: dict):
+    """Запускає вбудований застосунок або розділ Параметрів Windows."""
     if platform.system() != "Windows":
         raise OSError("Системні застосунки Windows доступні лише на Windows")
+
     os.startfile(entry["target"])
-    
 
 
-
-
-
+# Процеси вбудованих застосунків (запасне закриття, якщо вікна не знайдено)
+SYSTEM_PROCESSES = {
+    "Параметри": ("SystemSettings.exe",),
+    "Калькулятор": ("CalculatorApp.exe", "Calculator.exe"),
+    "Фотографії": ("Microsoft.Photos.exe",),
+    "Камера": ("WindowsCamera.exe",),
+    "Безпека Windows": ("SecHealthUI.exe",),
+    "Microsoft Store": ("WinStore.App.exe",),
+    "Блокнот": ("notepad.exe",),
+    "Paint": ("mspaint.exe",),
+}

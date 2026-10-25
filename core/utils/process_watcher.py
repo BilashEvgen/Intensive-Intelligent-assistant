@@ -42,12 +42,12 @@ def resolve_shortcut_target(path: str) -> str:
         return path
 
 
-def count_launch(name: str, path: str, now: float) -> bool:
+def count_launch(name: str, path: str, now: float, window: float = None) -> bool:
     """Рахує запуск, ігноруючи дублі того ж exe протягом LAUNCH_COOLDOWN секунд."""
     base = os.path.basename(path).lower()
 
     with lock:
-        if base and base in recent and now - recent[base] < LAUNCH_COOLDOWN:
+        if base and base in recent and now - recent[base] < (window or LAUNCH_COOLDOWN):
             return False
         if base:
             recent[base] = now

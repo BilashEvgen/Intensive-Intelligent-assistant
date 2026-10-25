@@ -7,8 +7,10 @@ from core.utils.app_usage import get_primary_catalog, pick_top_suggestion
 
 SUGGESTIONS_PAGE_SIZE = 3
 
-def get_next_suggestions(all_suggestions: list, offset: int, limit: int = 3):
-    return all_suggestions[offset : offset+limit ], offset + limit
+def get_next_suggestions(all_suggestions: list, offset: int, limit: int = 3) -> tuple:
+    """Повертає наступну порцію варіантів і нову позицію."""
+    return all_suggestions[offset: offset + limit], offset + limit
+
 
 def display_name(item) -> str:
     """Повертає назву варіанта для показу."""
@@ -92,7 +94,7 @@ def confirm_app_from_catalog(
     max_no_response: int = 3,
     page_size: int = SUGGESTIONS_PAGE_SIZE,
 ):
-    """Підбирає та підтверджує назву застосунку зі словника."""
+    """Підбирає та підтверджує застосунок серед запущених і встановлених на ПК."""
     heard_word = app_name.strip()
 
     if not heard_word:
@@ -102,49 +104,47 @@ def confirm_app_from_catalog(
 
     if not system_matches:
         if stdout:
-            stdout.write(f"Не знайдено програм схожих на {heard_word}")
-            speak_async(f"Я не знайла програму {heard_word} на комп'ютері")
-        
+            stdout.write(f'Не знайдено програм, схожих на "{heard_word}"')
+        speak_async(f'Я не знайшла програму "{heard_word}" на компʼютері')
         return None
+
     all_suggestions = [{"name": app["name"], "path": app["path"]} for app in system_matches]
-    source_label = "серед встановлених застосунків"
+    source_label = "серед застосунків на ПК"
 
     offset = 0
     current_batch, offset = get_next_suggestions(all_suggestions, offset, page_size)
 
     top_app, reason = pick_top_suggestion(heard_word, system_matches)
+
     if top_app:
-        decision = offer_top_app(
-            top_app, 
-            reason, 
-            source, 
-            recognizer, 
-            commands, 
-            stdout
-        )
-        
+        decision = offer_top_app(top_app, reason, source, recognizer, commands, stdout)
+
         if decision == "accept":
             return top_app
+
         if decision == "keep":
             return heard_word
+
         if decision == "cancel":
             return None
-        
+
     first_batch = current_batch
-    
+
     need_full_prompt = True
     no_response_streak = 0
-    
-    for i in range(max_attempts):
+
+    for _ in range(max_attempts):
         if need_full_prompt:
-            options_text = ", ".join(f"{a + 1} - {display_name(word)}" for a, word in enumerate(current_batch))
+            options_text = ", ".join(f"{i + 1} - {display_name(word)}" for i, word in enumerate(current_batch))
+
             if stdout:
-                stdout.write(f"Варіанти для {heard_word}({source_label}):{options_text}")
-            speak_async(f"Почула {heard_word}. Варіанти: {options_text}. Назвіть номер для вибору, 'не підходить' для інших варіантів, 'залиш' або 'стоп'")
-            need_full_prompt = False 
+                stdout.write(f'Варіанти для "{heard_word}" ({source_label}): {options_text}')
+
+            speak_task(f'Почула "{heard_word}". Варіанти: {options_text}. Назвіть номер для вибору, "не підходить" для інших варіантів, "залиш" або "стоп"')
+            need_full_prompt = False
         else:
-            speak_task("Номер, 'не підходить', 'залиш' або 'стоп'")
-            
+            speak_task('Номер, "не підходить", "залиш" або "стоп"')
+
         answer = get_voice_input(source, recognizer, stdout=stdout)
 
         if answer is None:

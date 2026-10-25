@@ -11,13 +11,16 @@ from core.management.commands.add_command import add_new_app_command_voice
 from core.management.commands.delete_command import delete_app_command_voice
 from core.utils.default_commands import load_default_commands
 from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
+from core.utils.app_confirm import confirm_app_from_catalog
+from core.utils.voice_input import configure_recognizer, recognize_variants
+from core.utils.app_closer import close_by_voice
+from core.utils.system_launcher import (
+    find_system_target, launch_system_target, SYSTEM_MATCH_STRICT, SYSTEM_MATCH_LOOSE,
+)
 from core.utils.answer_classify import matches_action
 from core.utils.discovery_app import scan_and_store_apps_async
 from core.utils.process_watcher import start_process_watcher_async, register_assistant_launch
 from core.utils.system_apps import normalize_app_path
-from core.utils.app_confirm import confirm_app_from_catalog
-from core.utils.voice_input import configure_recognizer, recognize_variants
-from core.utils.system_launcher import (find_system_target, launch_system_target, SYSTEM_WATCH_STRICT, SYSTEM_WATCH_LOOSE)
 
 
 class Command(BaseCommand):
@@ -30,21 +33,22 @@ class Command(BaseCommand):
         start_process_watcher_async(stdout= self.stdout)
         
         recognizer = sr.Recognizer()
+        configure_recognizer(recognizer)
         mic = sr.Microphone()
         
         with mic as source:
-
             self.stdout.write(self.style.SUCCESS("Слухаю ..."))
             
             while True:
                 try:
                     audio = recognizer.listen(source, timeout = None, phrase_time_limit = 5)
+
                     variants = recognize_variants(recognizer, audio)
+
                     if not variants:
                         continue
-                    
+
                     command_text = variants[0]
-                    
                     self.text_variants = [{"transcript": text} for text in variants]
                     self.stdout.write(f"Ви сказали: {command_text}")
                     self.process_command(command_text, source, recognizer)
@@ -77,12 +81,7 @@ class Command(BaseCommand):
             return
 
         if is_close:
-            found_app = self.find_app_by_keyword()
-            if not found_app:
-                speak_async("Я не знайшла такої команди")
-                return
-            speak_async(f"Закриваю {found_app.app_name}")
-            self.close_app(found_app)
+            self.handle_close(command_text)
             return
 
         if not is_open:
@@ -91,36 +90,35 @@ class Command(BaseCommand):
                     speak_async(resp.response)
                     return
             return
-        
+
         candidates = self.open_candidates(command_text)
-        system_entry = find_system_target(candidates, SYSTEM_WATCH_STRICT)
+
+        system_entry = find_system_target(candidates, SYSTEM_MATCH_STRICT)
         if system_entry:
             self.open_system_target(system_entry)
             return
-        
+
         found_app = self.find_app_by_keyword()
 
         if not found_app:
-            system_entry = find_system_target(candidates, SYSTEM_WATCH_LOOSE)
-            
+            system_entry = find_system_target(candidates, SYSTEM_MATCH_LOOSE)
             if system_entry:
                 self.open_system_target(system_entry)
                 return
-            
+
             candidate = extract_app_name(command_text, self.default_commands["open"])
 
             if not candidate:
                 speak_async("Я не знайшла такої команди")
                 return
 
-            speak_async(f'Я не знайшла команду "{candidate}" в базі. Підберу схожі слова зі словника')
+            speak_async(f'Я не знайшла команду "{candidate}" в базі. Шукаю схожі програми на компʼютері')
 
             confirmed_word = confirm_app_from_catalog(
                 candidate, source, recognizer, self.default_commands, self.stdout
             )
 
             if not confirmed_word:
-                speak_async("Додавання скасовано")
                 return
 
             self.register_and_launch_new_app(confirmed_word)
@@ -141,6 +139,53 @@ class Command(BaseCommand):
             self.launch_app(found_path, found_app.app_name)
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
+
+    def handle_close(self, command_text: str):
+        """Закриває запущену програму за назвою (команди, системні програми, будь-яке відкрите вікно)."""
+        candidates = self.open_candidates(command_text, "close")
+
+        if not candidates:
+            speak_async("Що саме закрити?")
+            return
+
+        status, label = close_by_voice(candidates)
+
+        if status == "unsupported":
+            found_app = self.find_app_by_keyword()
+            if not found_app:
+                speak_async("Я не знайшла такої команди")
+                return
+            speak_async(f"Закриваю {found_app.app_name}")
+            self.close_app(found_app)
+        elif status == "closed":
+            speak_async(f"Закрила {label}")
+        elif status == "killed":
+            speak_async(f"Завершила {label}")
+        elif status == "pending":
+            speak_async(f"{label} ще відкрита, можливо, вона питає про збереження змін")
+        else:
+            speak_async(f"Я не бачу запущеної програми {label}")
+
+    def open_candidates(self, command_text: str, action: str = "open") -> list:
+        """Повертає назви застосунку з усіх варіантів розпізнавання."""
+        texts = [command_text] + [item.get("transcript", "") for item in getattr(self, "text_variants", [])]
+        candidates = []
+
+        for text in texts:
+            candidate = extract_app_name(text.lower().strip(), self.default_commands[action])
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+
+        return candidates
+
+    def open_system_target(self, entry: dict):
+        """Відкриває вбудований застосунок або розділ Параметрів Windows."""
+        speak_async(f"Відкриваю {entry['title']}")
+        try:
+            launch_system_target(entry)
+        except Exception as err:
+            self.stdout.write(self.style.ERROR(f"Помилка запуску {entry['title']}: {err}"))
+            speak_async("Не вдалося відкрити")
 
     def is_launchable_path(self, path):
         """Перевіряє доступність шляху для запуску."""
@@ -176,23 +221,6 @@ class Command(BaseCommand):
             self.launch_app(found_path, word)
         else:
             speak_async(f"Команду {word} додано, але я не змогла знайти таку програму на компʼютері")
-            
-    def open_candidates(self, command_text):
-        texts = [command_text] + [item.get("transcript", "") for item in getattr(self, "text_variants", [])]
-        candidates = []
-        for text in texts:
-            candidate = extract_app_name(text.lower().strip(), self.default_commands["open"])
-            if candidate and candidate not in candidates:
-                candidates.append(candidate)
-        return candidates
-    
-    def open_system_target(self, entry: dict):
-        speak_async(f"Відкриваю {entry["title"]}")
-        try:
-            launch_system_target(entry)
-        except Exception as err:
-            self.stdout.write(self.style.ERROR(f"Помилка запуску {entry["title"]}: {err}"))
-            speak_async("Не вдалося відкрити")
 
     def find_app_by_keyword(self):
         best_app = None

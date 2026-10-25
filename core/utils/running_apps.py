@@ -20,9 +20,10 @@ GWL_EXSTYLE = -20
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_APPWINDOW = 0x00040000
 DWMWA_CLOAKED = 14
+WM_CLOSE = 0x0010
 
 
-def _load_winapi():
+def load_winapi():
     """Налаштовує функції WinAPI з коректними типами (важливо для 64-бітних дескрипторів)."""
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     dwmapi = ctypes.WinDLL("dwmapi")
@@ -37,6 +38,10 @@ def _load_winapi():
     user32.GetWindow.restype = wintypes.HWND
     user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
     user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.PostMessageW.restype = wintypes.BOOL
     dwmapi.DwmGetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
     dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
 
@@ -45,7 +50,7 @@ def _load_winapi():
 
 def taskbar_windows() -> dict:
     """Повертає {hwnd: pid} для вікон, які показуються на панелі завдань (правило Alt+Tab)."""
-    user32, dwmapi = _load_winapi()
+    user32, dwmapi = load_winapi()
     enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     user32.EnumWindows.argtypes = [enum_proc, wintypes.LPARAM]
     user32.EnumWindows.restype = wintypes.BOOL
@@ -111,3 +116,60 @@ def snapshot_windows() -> dict:
 def snapshot_running_apps() -> dict:
     """Повертає {шлях до exe: назва} для запущених застосунків."""
     return {exe: name for exe, name in snapshot_windows().values()}
+
+
+def protected_pids() -> set:
+    """PID самого асистента та його батьківських процесів (термінал), які не можна закривати."""
+    pids = {os.getpid()}
+    try:
+        pids.update(parent.pid for parent in psutil.Process().parents())
+    except Exception:
+        pass
+    return pids
+
+
+def snapshot_window_details() -> list:
+    """Повертає всі вікна застосунків: hwnd, pid, exe, назва процесу, заголовок вікна."""
+    if platform.system() != "Windows":
+        return []
+
+    user32, _ = load_winapi()
+    protected = protected_pids()
+    exe_cache = {}
+    windows = []
+
+    for hwnd, pid in taskbar_windows().items():
+        if pid in protected:
+            continue
+
+        if pid not in exe_cache:
+            try:
+                exe_cache[pid] = psutil.Process(pid).exe()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+                exe_cache[pid] = ""
+
+        exe = exe_cache[pid]
+        if not exe:
+            continue
+
+        buffer = ctypes.create_unicode_buffer(512)
+        user32.GetWindowTextW(hwnd, buffer, 512)
+
+        base = os.path.basename(exe)
+        windows.append({
+            "hwnd": hwnd,
+            "pid": pid,
+            "exe": exe,
+            "name": os.path.splitext(base)[0],
+            "title": buffer.value,
+            # UWP-застосунки (Параметри, Калькулятор, Фото) показуються через цей хост
+            "host": base.lower() == "applicationframehost.exe",
+        })
+
+    return windows
+
+
+def send_close(hwnd) -> bool:
+    """Просить вікно закритися так само, як кнопка "x" (з запитом на збереження змін)."""
+    user32, _ = load_winapi()
+    return bool(user32.PostMessageW(hwnd, WM_CLOSE, 0, 0))

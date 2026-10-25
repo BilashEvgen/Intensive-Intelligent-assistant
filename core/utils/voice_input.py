@@ -1,28 +1,35 @@
 import time
 
 ENERGY_THRESHOLD = 200
-PAUSE_THREASHOLD = 0.6
+PAUSE_THRESHOLD = 0.6
 PHRASE_THRESHOLD = 0.1
 NON_SPEAKING_DURATION = 0.3
 LANGUAGE = "uk-UA"
 
 
 def configure_recognizer(recognizer):
+    """Налаштовує розпізнавач так, щоб він приймав і дуже короткі фрази ("так", "ні", "хром")."""
     recognizer.dynamic_energy_threshold = False
     recognizer.energy_threshold = ENERGY_THRESHOLD
-    recognizer.pause_threshold = PAUSE_THREASHOLD
+    recognizer.pause_threshold = PAUSE_THRESHOLD
+    # За замовчуванням 0.3 с: усе, що коротше, вважається шумом і відкидається
     recognizer.phrase_threshold = PHRASE_THRESHOLD
-    recognizer.non_speaking_duration = NON_SPEAKING_DURATION\
+    recognizer.non_speaking_duration = NON_SPEAKING_DURATION
 
-def recognize_variants(recognizer, audio, language: str = LANGUAGE):
-    result = recognizer.recognize_google(audio, language = language, show_all = True)
+
+def recognize_variants(recognizer, audio, language: str = LANGUAGE) -> list:
+    """Розпізнає аудіо одним запитом і повертає варіанти тексту (найкращий перший)."""
+    result = recognizer.recognize_google(audio, language=language, show_all=True)
     alternatives = result.get("alternative", []) if isinstance(result, dict) else []
+
     variants = []
     for alternative in alternatives:
-        text = (alternative.get("transcript") or "").lower().strip() 
+        text = (alternative.get("transcript") or "").lower().strip()
         if text and text not in variants:
             variants.append(text)
-        return variants
+
+    return variants
+
 
 def get_voice_input(
     source,
@@ -35,11 +42,15 @@ def get_voice_input(
     """Слухає один голосовий запит і повертає текст або None."""
     try:
         time.sleep(pre_delay)
+
         configure_recognizer(recognizer)
+
         if stdout:
-            stdout.write(f"Слухаю відповідь")
-        audio = recognizer.listen(source, timeout = None, phrase_time_limit = phrase_time_limit)
+            stdout.write("Слухаю відповідь ...")
+
+        audio = recognizer.listen(source, timeout=None, phrase_time_limit=phrase_time_limit)
         variants = recognize_variants(recognizer, audio)
+
         if not variants:
             if stdout:
                 stdout.write("Не вдалося розпізнати відповідь")
