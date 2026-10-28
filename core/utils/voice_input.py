@@ -31,6 +31,32 @@ def recognize_variants(recognizer, audio, language: str = LANGUAGE) -> list:
     return variants
 
 
+def get_voice_variants(
+    source,
+    recognizer,
+    phrase_time_limit: int = 5,
+    pre_delay: float = 0.15,
+    stdout=None,
+) -> list:
+    """Слухає один запит і повертає всі варіанти розпізнавання (порожній список - нічого не почула)."""
+    try:
+        if pre_delay:
+            time.sleep(pre_delay)
+
+        configure_recognizer(recognizer)
+
+        if stdout:
+            stdout.write("Слухаю відповідь ...")
+
+        audio = recognizer.listen(source, timeout=None, phrase_time_limit=phrase_time_limit)
+        return recognize_variants(recognizer, audio)
+
+    except Exception as err:
+        if stdout:
+            stdout.write(f"Не вдалося розпізнати відповідь: {err}")
+        return []
+
+
 def get_voice_input(
     source,
     recognizer,

@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand
 import speech_recognition as sr
 from core.models import Voice_response, App_command
-from core.utils.voice_engine import speak_async
+from core.utils.voice_engine import speak_async, speak_cached, prewarm_cache
 import platform
 import os
 import subprocess
@@ -12,7 +12,8 @@ from core.management.commands.delete_command import delete_app_command_voice
 from core.utils.default_commands import load_default_commands
 from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
 from core.utils.app_confirm import confirm_app_from_catalog
-from core.utils.voice_input import configure_recognizer, recognize_variants
+from core.utils.voice_input import configure_recognizer, recognize_variants, get_voice_variants
+from core.management.commands.clarify import ask_app_name, ALL_PHRASES
 from core.utils.app_closer import close_by_voice
 from core.utils.system_launcher import (
     find_system_target, launch_system_target, SYSTEM_MATCH_STRICT, SYSTEM_MATCH_LOOSE,
@@ -28,6 +29,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Асистен запущений ..."))
 
         self.default_commands = load_default_commands()
+        prewarm_cache(ALL_PHRASES)
         
         scan_and_store_apps_async(self.stdout)
         start_process_watcher_async(stdout= self.stdout)
@@ -60,7 +62,7 @@ class Command(BaseCommand):
                     self.stdout.write(self.style.WARNING(f"Помилка: {err}"))
                     continue
                 
-    def process_command(self, command_text: str, source, recognizer):
+    def process_command(self, command_text: str, source, recognizer, clarified: bool = False):
         command_text = command_text.lower().strip()
 
         is_add_command = matches_action(command_text, self.default_commands["add_command"])
@@ -81,7 +83,7 @@ class Command(BaseCommand):
             return
 
         if is_close:
-            self.handle_close(command_text)
+            self.handle_close(command_text, source, recognizer, clarified)
             return
 
         if not is_open:
@@ -109,7 +111,11 @@ class Command(BaseCommand):
             candidate = extract_app_name(command_text, self.default_commands["open"])
 
             if not candidate:
-                speak_async("Я не знайшла такої команди")
+                # Дієслово почуто, а назви програми немає - одразу перепитуємо
+                if clarified:
+                    speak_async("Я не знайшла такої команди")
+                else:
+                    self.clarify_and_retry("open", source, recognizer)
                 return
 
             speak_async(f'Я не знайшла команду "{candidate}" в базі. Шукаю схожі програми на компʼютері')
@@ -140,12 +146,33 @@ class Command(BaseCommand):
         else:
             speak_async(f"Я не змогла знайти цю програму на компе")
 
-    def handle_close(self, command_text: str):
+    def clarify_and_retry(self, action: str, source, recognizer):
+        """Питає назву програми і повторно виконує команду вже з уточненою назвою."""
+        names = ask_app_name(
+            action,
+            self.default_commands,
+            listen=lambda: get_voice_variants(source, recognizer, stdout=self.stdout),
+            say=speak_cached,
+            stdout=self.stdout,
+        )
+
+        if not names:
+            return
+
+        verb = self.default_commands[action][0]
+        self.text_variants = [{"transcript": f"{verb} {name}"} for name in names]
+        self.stdout.write(f"Уточнено: {self.text_variants[0]['transcript']}")
+        self.process_command(self.text_variants[0]["transcript"], source, recognizer, clarified=True)
+
+    def handle_close(self, command_text: str, source=None, recognizer=None, clarified: bool = False):
         """Закриває запущену програму за назвою (команди, системні програми, будь-яке відкрите вікно)."""
         candidates = self.open_candidates(command_text, "close")
 
         if not candidates:
-            speak_async("Що саме закрити?")
+            if clarified or source is None:
+                speak_async("Що саме закрити?")
+            else:
+                self.clarify_and_retry("close", source, recognizer)
             return
 
         status, label = close_by_voice(candidates)
