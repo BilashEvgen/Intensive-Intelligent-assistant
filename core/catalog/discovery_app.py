@@ -1,7 +1,7 @@
 import platform
 import threading
 from core.models import Discovered_app
-from core.utils.system_apps import list_installed_apps
+from core.catalog.system_apps import list_installed_apps
 
 
 def scan_and_store_apps(stdout = None):

@@ -1,7 +1,7 @@
 import os
 import platform
 
-from core.utils.system_apps import app_match_score
+from core.catalog.system_apps import app_match_score
 
 SYSTEM_MATCH_STRICT = 0.85
 SYSTEM_MATCH_LOOSE = 0.7

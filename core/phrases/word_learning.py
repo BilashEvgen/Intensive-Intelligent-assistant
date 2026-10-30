@@ -1,12 +1,12 @@
 import json
 import os
 
-from core.utils.voice_engine import speak_async, speak_task
-from core.utils.voice_input import get_voice_input
-from core.utils.fuzzy_match import similarity
-from core.utils.answer_classify import is_confirm, is_deny
-from core.utils.default_commands import DEFAULT_COMMANDS_PATH
-from core.utils.phrase_db import add_phrase
+from core.voice.voice_engine import speak_async, speak_task
+from core.voice.voice_input import get_voice_input
+from core.language.fuzzy_match import similarity
+from core.dialog.answer_classify import is_confirm, is_deny
+from core.phrases.default_commands import DEFAULT_COMMANDS_PATH
+from core.phrases.phrase_db import add_phrase
 NEGATION_PREFIXES = ("не", "ні", "ані")
 
 TYPE_LABELS = {

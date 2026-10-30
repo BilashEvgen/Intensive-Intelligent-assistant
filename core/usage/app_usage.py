@@ -6,9 +6,9 @@ from django.db.models import F
 from django.utils import timezone
 
 from core.models import App_usage, Discovered_app
-from core.utils.app_classify import filter_primary_apps, is_secondary_app
-from core.utils.running_apps import snapshot_running_apps
-from core.utils.system_apps import app_match_score, list_installed_apps, normalize_app_path
+from core.usage.app_classify import filter_primary_apps, is_secondary_app
+from core.processes.running_apps import snapshot_running_apps
+from core.catalog.system_apps import app_match_score, list_installed_apps, normalize_app_path
 
 TOP_USED_LIMIT = 30
 USAGE_MIN_SCORE = 0.6

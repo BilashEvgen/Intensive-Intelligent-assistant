@@ -1,8 +1,8 @@
 
 import random
 
-from core.utils.answer_classify import is_cancel, normalize_words
-from core.utils.fuzzy_match import extract_app_name
+from core.dialog.answer_classify import is_cancel, normalize_words
+from core.language.fuzzy_match import extract_app_name
 
 MAX_ATTEMPTS = 2
 LISTEN_SECONDS = 4
@@ -74,7 +74,7 @@ def clean_names(variants: list, action: str, commands: dict) -> list:
     for text in variants:
         name = extract_app_name(text.lower().strip(), commands[action])
         words = [w for w in name.split() if w.strip(",.!?") not in FILLER_WORDS]
-        name = "".join(words).strip(" ,.!?")
+        name = " ".join(words).strip(" ,.!?")
 
         if name and name not in names:
             names.append(name)

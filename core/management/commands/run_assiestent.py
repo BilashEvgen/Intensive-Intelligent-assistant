@@ -1,27 +1,27 @@
 from django.core.management.base import BaseCommand
 import speech_recognition as sr
 from core.models import Voice_response, App_command
-from core.utils.voice_engine import speak_async, speak_cached, prewarm_cache
+from core.voice.voice_engine import speak_async, speak_cached, prewarm_cache
 import platform
 import os
 import subprocess
 
-from core.utils.finder import find_app_path
+from core.launcher.finder import find_app_path
 from core.management.commands.add_command import add_new_app_command_voice
 from core.management.commands.delete_command import delete_app_command_voice
-from core.utils.default_commands import load_default_commands
-from core.utils.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
-from core.utils.app_confirm import confirm_app_from_catalog
-from core.utils.voice_input import configure_recognizer, recognize_variants, get_voice_variants
-from core.management.commands.clarify import ask_app_name, ALL_PHRASES
-from core.utils.app_closer import close_by_voice
-from core.utils.system_launcher import (
+from core.phrases.default_commands import load_default_commands
+from core.language.fuzzy_match import fuzzy_word_in_text, find_best_keyword_match, similarity, extract_app_name
+from core.dialog.app_confirm import confirm_app_from_catalog
+from core.voice.voice_input import configure_recognizer, recognize_variants, get_voice_variants
+from core.dialog.clarify import ask_app_name, ALL_PHRASES
+from core.processes.app_closer import close_by_voice
+from core.launcher.system_launcher import (
     find_system_target, launch_system_target, SYSTEM_MATCH_STRICT, SYSTEM_MATCH_LOOSE,
 )
-from core.utils.answer_classify import matches_action
-from core.utils.discovery_app import scan_and_store_apps_async
-from core.utils.process_watcher import start_process_watcher_async, register_assistant_launch
-from core.utils.system_apps import normalize_app_path
+from core.dialog.answer_classify import matches_action
+from core.catalog.discovery_app import scan_and_store_apps_async
+from core.processes.process_watcher import start_process_watcher_async, register_assistant_launch
+from core.catalog.system_apps import normalize_app_path
 
 
 class Command(BaseCommand):

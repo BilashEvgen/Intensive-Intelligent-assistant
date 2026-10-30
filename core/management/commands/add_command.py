@@ -1,7 +1,7 @@
 from core.models import App_command
-from core.utils.voice_engine import speak_async, speak_task
-from core.utils.voice_input import get_voice_input
-from core.utils.answer_classify import is_cancel, is_confirm, classify_answer
+from core.voice.voice_engine import speak_async, speak_task
+from core.voice.voice_input import get_voice_input
+from core.dialog.answer_classify import is_cancel, is_confirm, classify_answer
 
 STEP_ATTEMPTS = 4
 

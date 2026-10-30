@@ -1,5 +1,5 @@
 import os
-from core.utils.phrase_db import load_phrases
+from core.phrases.phrase_db import load_phrases
 DEFAULT_COMMANDS_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "data",

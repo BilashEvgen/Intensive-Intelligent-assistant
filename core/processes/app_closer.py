@@ -4,10 +4,10 @@ import subprocess
 import time
 
 from core.models import App_command
-from core.utils.process_watcher import resolve_shortcut_target
-from core.utils.running_apps import snapshot_window_details, send_close
-from core.utils.system_apps import app_match_score
-from core.utils.system_launcher import find_system_target, SYSTEM_MATCH_LOOSE, SYSTEM_PROCESSES
+from core.processes.process_watcher import resolve_shortcut_target
+from core.processes.running_apps import snapshot_window_details, send_close
+from core.catalog.system_apps import app_match_score
+from core.launcher.system_launcher import find_system_target, SYSTEM_MATCH_LOOSE, SYSTEM_PROCESSES
 
 CLOSE_THRESHOLD = 0.8
 COMMAND_MATCH_THRESHOLD = 0.8
@@ -16,6 +16,13 @@ CLOSE_WAIT_SECONDS = 2.5
 # У браузерів заголовок вікна - це вкладка, тому за заголовком їх не закриваємо
 BROWSER_EXES = {"chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "vivaldi.exe"}
 SHELL_TITLES = {"program manager"}
+# Ці процеси ніколи не завершуємо примусово (закриття explorer.exe прибере панель завдань)
+NEVER_KILL = {"explorer.exe"}
+
+
+def is_shell_window(window: dict) -> bool:
+    """Вікно робочого столу (Program Manager) належить explorer.exe, але закривати його не можна."""
+    return window["title"].lower().strip() in SHELL_TITLES and os.path.basename(window["exe"]).lower() == "explorer.exe"
 
 
 def command_exes(candidates: list) -> set:
@@ -64,6 +71,8 @@ def find_windows_to_close(names: list, exes: set, windows: list) -> list:
     best = None
     best_score = 0.0
 
+    windows = [window for window in windows if not is_shell_window(window)]
+
     for window in windows:
         score = window_score(window, names, exes)
         if score >= CLOSE_THRESHOLD and score > best_score:
@@ -111,6 +120,7 @@ def close_by_voice(candidates: list):
     processes = set(exes)
     if entry:
         processes.update(SYSTEM_PROCESSES.get(entry["title"], ()))
+    processes = {name for name in processes if name.lower() not in NEVER_KILL}
 
     killed = False
     for process in processes:

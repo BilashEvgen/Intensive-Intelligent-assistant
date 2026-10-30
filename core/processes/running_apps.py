@@ -118,11 +118,18 @@ def snapshot_running_apps() -> dict:
     return {exe: name for exe, name in snapshot_windows().values()}
 
 
+# Оболонка Windows запускає майже все (термінал, IDE), тому вона є "батьком" асистента.
+# Її не захищаємо: інакше вікна Провідника були б невидимі для команди "закрий"
+SHELL_ANCESTORS = {"explorer.exe"}
+
+
 def protected_pids() -> set:
     """PID самого асистента та його батьківських процесів (термінал), які не можна закривати."""
     pids = {os.getpid()}
     try:
-        pids.update(parent.pid for parent in psutil.Process().parents())
+        for parent in psutil.Process().parents():
+            if parent.name().lower() not in SHELL_ANCESTORS:
+                pids.add(parent.pid)
     except Exception:
         pass
     return pids

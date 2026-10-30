@@ -1,4 +1,4 @@
-from core.utils.fuzzy_match import find_best_keyword_match, similarity
+from core.language.fuzzy_match import find_best_keyword_match, similarity
 
 ACTION_VERB_THRESHOLD = 0.8
 
@@ -78,6 +78,6 @@ def classify_answer(text, commands: dict, source=None, recognizer=None, stdout=N
     if source is None or recognizer is None:
         return None
 
-    from core.utils.word_learning import learn_new_word
+    from core.phrases.word_learning import learn_new_word
 
     return learn_new_word(text, commands, source, recognizer, stdout=stdout)

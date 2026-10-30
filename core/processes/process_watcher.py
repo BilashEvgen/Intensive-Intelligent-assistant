@@ -4,8 +4,8 @@ import subprocess
 import threading
 import time
 
-from core.utils.app_usage import record_app_launch
-from core.utils.running_apps import snapshot_windows
+from core.usage.app_usage import record_app_launch
+from core.processes.running_apps import snapshot_windows
 
 POLL_INTERVAL = 2.0
 LAUNCH_COOLDOWN = 5.0

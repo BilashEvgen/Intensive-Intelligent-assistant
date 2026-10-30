@@ -4,7 +4,7 @@ import re
 import platform
 import subprocess
 
-from core.utils.fuzzy_match import similarity
+from core.language.fuzzy_match import similarity
 MIN_MATCH_SCORE = 0.55
 
 

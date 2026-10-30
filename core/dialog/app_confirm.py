@@ -1,9 +1,9 @@
-from core.utils.voice_engine import speak_async, speak_task
-from core.utils.voice_input import get_voice_input
-from core.utils.spelling import parse_number
-from core.utils.answer_classify import is_cancel, is_confirm, is_deny, is_keep, classify_answer
-from core.utils.system_apps import find_matching_apps
-from core.utils.app_usage import get_primary_catalog, pick_top_suggestion
+from core.voice.voice_engine import speak_async, speak_task
+from core.voice.voice_input import get_voice_input
+from core.voice.spelling import parse_number
+from core.dialog.answer_classify import is_cancel, is_confirm, is_deny, is_keep, classify_answer
+from core.catalog.system_apps import find_matching_apps
+from core.usage.app_usage import get_primary_catalog, pick_top_suggestion
 
 SUGGESTIONS_PAGE_SIZE = 3
 
